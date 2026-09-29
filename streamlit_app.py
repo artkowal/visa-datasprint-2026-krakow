@@ -82,6 +82,8 @@ if "map_zoom" not in st.session_state:
     st.session_state["map_zoom"] = 6
 if "_last_click" not in st.session_state:
     st.session_state["_last_click"] = None
+if "_ref_gmina" not in st.session_state:
+    st.session_state["_ref_gmina"] = None
 selected: set[str] = st.session_state["selected"]
 
 # ── Pasek sterowania ──────────────────────────────────────────────────────────
@@ -153,7 +155,12 @@ def map_fragment():
             if gmina in sel:
                 sel.discard(gmina)
                 st.toast(f"Odznaczono: {gmina}", icon="🔲")
+                # jeśli odznaczono miasto referencyjne, ustaw nowe ref jako pierwsze z pozostałych
+                if st.session_state["_ref_gmina"] == gmina:
+                    st.session_state["_ref_gmina"] = next(iter(sel), None)
             else:
+                if not sel:
+                    st.session_state["_ref_gmina"] = gmina
                 sel.add(gmina)
                 st.toast(f"Zaznaczono: {gmina}", icon="📍")
             st.session_state["selected"] = sel
@@ -170,6 +177,7 @@ if selected:
         if st.button("✕ Wyczyść"):
             st.session_state["selected"] = set()
             st.session_state["_last_click"] = None
+            st.session_state["_ref_gmina"] = None
 else:
     st.info("Kliknij gminę na mapie aby ją zaznaczyć. Możesz wybrać kilka do porównania.", icon="👆")
     st.stop()
@@ -184,7 +192,11 @@ def load_marts():
 
 marts = load_marts()
 
-gminy_list = sorted(selected)
+_ref = st.session_state.get("_ref_gmina")
+if _ref and _ref in selected:
+    gminy_list = [_ref] + sorted(selected - {_ref})
+else:
+    gminy_list = sorted(selected)
 
 
 def _comparison_chart(
@@ -282,13 +294,19 @@ for col, gmina in zip(hdr_cols, gminy_list):
     is_ref = (gmina == gminy_list[0])
     with col:
         dom = dominant_data.get(gmina)
-        st.markdown(f"## 🏘️ {gmina}")
+        if is_ref and len(gminy_list) > 1:
+            st.markdown(
+                f"## 🏘️ {gmina} "
+                f'<span style="font-size:0.55em;background:#6366f1;color:#fff;'
+                f'padding:2px 8px;border-radius:999px;vertical-align:middle">REF</span>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(f"## 🏘️ {gmina}")
         if dom:
             from app.categories import GROUP_ICONS
             icon = GROUP_ICONS.get(dom["grupa"], "🏷️")
             st.markdown(f"{icon} **{dom['grupa']}** · {dom['pct']}% transakcji · śr. {dom['avg_amt']} zł")
-        if is_ref and len(gminy_list) > 1:
-            st.caption("baza referencyjna")
 
 # ── Wykres profilu kategorii (full-width, już po nagłówkach) ──────────────────
 st.markdown("### 📊 Profil kategorii")
