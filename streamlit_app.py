@@ -119,23 +119,47 @@ def _get_figure(sel: set, view_mode: str):
 def map_fragment():
     sel = st.session_state["selected"]
 
-    # Wyszukiwarka — klucz z licznikiem wymusza reset po wyborze
-    _reset = st.session_state.get("_search_reset", 0)
+    # Wyszukiwarka — fly-to animuje mapę, nie dodaje gminy do zaznaczonych
     _sc, _ = st.columns([3, 7])
     with _sc:
         search = st.selectbox(
             "Szukaj gminy",
             [None] + sorted(centroids.keys()),
-            key=f"gmina_search_{_reset}",
+            key="gmina_search",
             label_visibility="collapsed",
             placeholder="🔍 Szukaj gminy…",
             index=0,
         )
+
+    # Animuj centrum mapy przez JS — bez przebudowy figury
+    fly_to = st.session_state.pop("_fly_to", None)
+    if fly_to:
+        lat, lon, zoom = fly_to
+        st.components.v1.html(f"""
+        <script>
+        (function() {{
+            var tries = 0;
+            function fly() {{
+                var plots = window.parent.document.querySelectorAll('.js-plotly-plot');
+                if (plots.length && window.parent.Plotly) {{
+                    window.parent.Plotly.relayout(plots[0], {{
+                        'map.center': {{lat: {lat}, lon: {lon}}},
+                        'map.zoom': {zoom}
+                    }});
+                }} else if (tries++ < 20) {{
+                    setTimeout(fly, 100);
+                }}
+            }}
+            fly();
+        }})();
+        </script>
+        """, height=0)
+
     if search:
-        sel.add(search)
-        st.session_state["selected"] = sel
-        st.session_state["_search_reset"] = _reset + 1
-        st.rerun(scope="app")
+        lat, lon = centroids[search]
+        st.session_state["_fly_to"] = (lat, lon, 9)
+        del st.session_state["gmina_search"]
+        st.rerun(scope="fragment")
 
     fig = _get_figure(sel, map_view)
     # on_select="rerun" → Streamlit rerenderuje tylko fragment przy kliknięciu

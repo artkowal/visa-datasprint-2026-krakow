@@ -68,6 +68,8 @@ def load_gminy_data(
     dissolved["geometry"] = dissolved["geometry"].buffer(_GAP_CLOSE_METERS).buffer(-_GAP_CLOSE_METERS)
     dissolved["geometry"] = dissolved["geometry"].apply(lambda g: _fill_small_holes(g, _MIN_HOLE_AREA_M2))
     dissolved = dissolved.to_crs(gdf.crs)
+    # Simplify at ~250m tolerance — invisible at national zoom, halves JSON size
+    dissolved["geometry"] = dissolved["geometry"].simplify(0.0025, preserve_topology=True)
     dissolved["geometry"] = dissolved["geometry"].make_valid()
     dissolved = dissolved[
         dissolved["geometry"].notna() &
@@ -93,6 +95,7 @@ def build_map(
     center_gmina: str | None = None,
     centroids: dict | None = None,
     dominant: dict[str, dict] | None = None,
+    uirevision: str = "poland_map",
 ) -> go.Figure:
     geojson = gminy_geojson
     if geojson is None:
@@ -242,8 +245,7 @@ def build_map(
         plot_bgcolor="#1e1e2e",
         hoverlabel=dict(bgcolor="#2a2a3e", font_color="#cdd6f4", font_size=13),
         showlegend=False,
-        # uirevision = stała wartość → Plotly zachowuje viewport (zoom/center) między rerenderami
-        uirevision="poland_map",
+        uirevision=uirevision,
     )
 
     return fig
