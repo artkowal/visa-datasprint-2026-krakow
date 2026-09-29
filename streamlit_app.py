@@ -160,7 +160,7 @@ else:
 def load_marts():
     return {
         topic: ensure_topic(topic)
-        for topic in ["summary", "by_country", "by_month", "by_hour", "by_card", "by_channel"]
+        for topic in ["summary", "by_country", "by_month", "by_hour", "by_card", "by_channel", "residents"]
     }
 
 marts = load_marts()
@@ -271,62 +271,43 @@ for col, gmina in zip(cols, gminy_list):
             df.columns = ["Kanał", "Transakcje", "%"]
             st.dataframe(df, hide_index=True, width='stretch')
 
-        # ── B + E — mieszkańcy (wolne, na żądanie) ────────────────────────────
+        # ── B + E — mieszkańcy (z martu JSON) ────────────────────────────────
         st.markdown("### 🏠 Mieszkańcy i powiązania")
+        import pandas as pd
+        r = marts["residents"].get(gmina, {})
 
-        btn_key = f"btn_residents_{gmina}"
-        res_key = f"residents_{gmina}"
-
-        if res_key not in st.session_state:
-            if st.button("Analizuj mieszkańców", key=btn_key):
-                with st.spinner("Liczę card_home i przepływy… (może zająć chwilę)"):
-                    st.session_state[res_key] = run_residents_analysis(
-                        list(postal_codes), code_to_gmina
-                    )
-                st.rerun()
-
-        if res_key in st.session_state:
-            r = st.session_state[res_key]
-
+        if not r:
+            st.caption("Brak danych o mieszkańcach dla tej gminy.")
+        else:
             st.caption(f"Karty z przypisanym domem w gminie: {r.get('n_resident_cards', 0):,}")
 
-            # E — wskaźniki syntetyczne
             st.markdown("#### 📊 Wskaźniki syntetyczne")
             e1, e2, e3 = st.columns(3)
-            e1.metric("Samowystarczalność",
-                      f"{r.get('E1_self_sufficiency', 0):.1f}%",
+            e1.metric("Samowystarczalność", f"{r.get('E1_self_sufficiency', 0):.1f}%",
                       help="% zakupów codziennych robionych lokalnie")
-            e2.metric("Atrakcyjność",
-                      f"{r.get('E2_attractiveness', 0):.1f}%",
+            e2.metric("Atrakcyjność", f"{r.get('E2_attractiveness', 0):.1f}%",
                       help="napływ / (napływ + odpływ)")
-            e3.metric("Zależność od gości",
-                      f"{r.get('E3_tourism_dependency', 0):.1f}%",
+            e3.metric("Zależność od gości", f"{r.get('E3_tourism_dependency', 0):.1f}%",
                       help="% transakcji w obszarze od osób spoza gminy")
 
-            # E5 — siła powiązania
-            if "E5_connections" in r:
+            if r.get("E5_connections"):
                 st.markdown("#### 🔗 Powiązania z innymi gminami")
-                conn = r["E5_connections"][["gmina", "kierunek", "n_out", "n_in", "flow_total"]]
-                conn.columns = ["Gmina", "↔", "Odpływ →", "Napływ ←", "Łącznie"]
-                st.dataframe(conn, hide_index=True, width='stretch')
+                st.dataframe(
+                    pd.DataFrame(r["E5_connections"])
+                      .rename(columns={"gmina":"Gmina","kierunek":"↔","n_out":"Odpływ →","n_in":"Napływ ←","flow_total":"Łącznie"}),
+                    hide_index=True, width='stretch')
 
-            # B2 — odpływ
-            if "B2_outflow" in r and len(r["B2_outflow"]):
+            if r.get("B2_outflow"):
                 st.markdown("#### 🚗 Dokąd wyjeżdżają mieszkańcy")
-                df = r["B2_outflow"][["area_gmina", "n"]].rename(
-                    columns={"area_gmina": "Gmina", "n": "Transakcje"})
+                df = pd.DataFrame(r["B2_outflow"]).rename(columns={"area_gmina":"Gmina","n":"Transakcje"})
                 st.bar_chart(df.set_index("Gmina"), width='stretch')
 
-            # B3 — napływ
-            if "B3_inflow" in r and len(r["B3_inflow"]):
+            if r.get("B3_inflow"):
                 st.markdown("#### 🏙️ Skąd przyjeżdżają do gminy")
-                df = r["B3_inflow"][["home_gmina", "n"]].rename(
-                    columns={"home_gmina": "Gmina", "n": "Transakcje"})
+                df = pd.DataFrame(r["B3_inflow"]).rename(columns={"home_gmina":"Gmina","n":"Transakcje"})
                 st.bar_chart(df.set_index("Gmina"), width='stretch')
 
-            # B4 — odpływ wg kategorii
-            if "B4_outflow_cat" in r and len(r["B4_outflow_cat"]):
-                st.markdown("#### 🛒 Czego szukają poza gminą (top kategorie)")
-                df = r["B4_outflow_cat"].rename(
-                    columns={"mrch_catg_nm": "Kategoria", "n": "Transakcje"})
+            if r.get("B4_outflow_cat"):
+                st.markdown("#### 🛒 Czego szukają poza gminą")
+                df = pd.DataFrame(r["B4_outflow_cat"]).rename(columns={"mrch_catg_nm":"Kategoria","n":"Transakcje"})
                 st.dataframe(df, hide_index=True, width='stretch')
