@@ -55,29 +55,50 @@ _GROUP_COLORS: dict[str, str] = {
 }
 
 
+_PROCESSED_GEOJSON = "geojson/gminy_processed.geojson"
+_MAPPING_JSON      = "geojson/gminy_mapping.json"
+
+
 def load_gminy_data(
-    geojson_path: str,
+    geojson_path: str = "geojson/postcodes_poland.geojson",
 ) -> tuple[dict, dict[str, list[str]], dict[str, tuple[float, float]]]:
+    import os
+    from shapely.geometry import shape
+
+    if os.path.exists(_PROCESSED_GEOJSON) and os.path.exists(_MAPPING_JSON):
+        # Szybka ścieżka: gotowy cache (bez dissolve/buffer/simplify)
+        with open(_PROCESSED_GEOJSON, encoding="utf-8") as f:
+            geojson = json.load(f)
+        with open(_MAPPING_JSON, encoding="utf-8") as f:
+            mapping = json.load(f)
+        centroids: dict[str, tuple[float, float]] = {
+            feat["properties"]["Gmina"]: (
+                shape(feat["geometry"]).centroid.y,
+                shape(feat["geometry"]).centroid.x,
+            )
+            for feat in geojson["features"]
+        }
+        return geojson, mapping, centroids
+
+    # Wolna ścieżka fallback: przelicz z surowych kodów pocztowych
     gdf = gpd.read_file(geojson_path)
     gdf["geometry"] = gdf["geometry"].make_valid()
 
-    mapping: dict[str, list[str]] = gdf.groupby("Gmina")["Name"].apply(list).to_dict()
+    mapping = gdf.groupby("Gmina")["Name"].apply(list).to_dict()
 
     dissolved = gdf.dissolve(by="Gmina").reset_index()[["Gmina", "geometry"]]
     dissolved = dissolved.set_crs(gdf.crs).to_crs(_PL_PROJECTED_CRS)
     dissolved["geometry"] = dissolved["geometry"].buffer(_GAP_CLOSE_METERS).buffer(-_GAP_CLOSE_METERS)
     dissolved["geometry"] = dissolved["geometry"].apply(lambda g: _fill_small_holes(g, _MIN_HOLE_AREA_M2))
     dissolved = dissolved.to_crs(gdf.crs)
-    # Simplify at ~250m tolerance — invisible at national zoom, halves JSON size
     dissolved["geometry"] = dissolved["geometry"].simplify(0.0025, preserve_topology=True)
     dissolved["geometry"] = dissolved["geometry"].make_valid()
     dissolved = dissolved[
         dissolved["geometry"].notna() &
         dissolved["geometry"].geom_type.isin(["Polygon", "MultiPolygon"])
     ]
-    dissolved["n_kodow"] = dissolved["Gmina"].map(lambda g: len(mapping.get(g, [])))
 
-    centroids: dict[str, tuple[float, float]] = {
+    centroids = {
         row["Gmina"]: (row.geometry.centroid.y, row.geometry.centroid.x)
         for _, row in dissolved.iterrows()
     }

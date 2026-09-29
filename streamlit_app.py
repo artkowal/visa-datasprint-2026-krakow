@@ -93,24 +93,26 @@ map_view = st.radio(
     key="main_map_view",
 )
 
-_render_dominant_map = (map_view == "Dominujące kategorie")
-
 # ── Cache figur mapy ──────────────────────────────────────────────────────────
 _FIGURE_CACHE: dict = {}
 _FIGURE_CACHE_MAX = 40
 
-def _get_figure(sel: set, view_mode: str):
-    key = (frozenset(sel), view_mode)
+def _get_figure(sel: set, view_mode: str, center=(52.0, 19.5), zoom=6):
+    key = (frozenset(sel), view_mode, center, zoom)
     if key not in _FIGURE_CACHE:
         if len(_FIGURE_CACHE) >= _FIGURE_CACHE_MAX:
             _FIGURE_CACHE.pop(next(iter(_FIGURE_CACHE)))
+        # uirevision encodes the center — gdy search zmienia center, Plotly używa nowych
+        # wartości z figury zamiast zachowywać stary viewport klienta
+        uirev = f"{center[0]:.4f}_{center[1]:.4f}_{zoom}"
         _FIGURE_CACHE[key] = build_map(
             GEOJSON_PATH, sel,
             gminy_geojson=gminy_geojson,
-            center=(52.0, 19.5),
-            zoom=6,
+            center=center,
+            zoom=zoom,
             centroids=centroids,
             dominant=dominant_data if view_mode == "Dominujące kategorie" else None,
+            uirevision=uirev,
         )
     return _FIGURE_CACHE[key]
 
@@ -131,39 +133,16 @@ def map_fragment():
             index=0,
         )
 
-    # Animuj centrum mapy przez JS — bez przebudowy figury
-    fly_to = st.session_state.pop("_fly_to", None)
-    if fly_to:
-        lat, lon, zoom = fly_to
-        st.components.v1.html(f"""
-        <script>
-        (function() {{
-            var tries = 0;
-            function fly() {{
-                var plots = window.parent.document.querySelectorAll('.js-plotly-plot');
-                if (plots.length && window.parent.Plotly) {{
-                    window.parent.Plotly.relayout(plots[0], {{
-                        'map.center': {{lat: {lat}, lon: {lon}}},
-                        'map.zoom': {zoom}
-                    }});
-                }} else if (tries++ < 20) {{
-                    setTimeout(fly, 100);
-                }}
-            }}
-            fly();
-        }})();
-        </script>
-        """, height=0)
-
     if search:
         lat, lon = centroids[search]
-        st.session_state["_fly_to"] = (lat, lon, 9)
+        st.session_state["map_center"] = [lat, lon]
+        st.session_state["map_zoom"] = 9
         del st.session_state["gmina_search"]
         st.rerun(scope="fragment")
 
-    fig = _get_figure(sel, map_view)
-    # on_select="rerun" → Streamlit rerenderuje tylko fragment przy kliknięciu
-    # uirevision w fig → Plotly zachowuje viewport (pan/zoom) między rerenderami
+    center = tuple(st.session_state["map_center"])
+    zoom = st.session_state["map_zoom"]
+    fig = _get_figure(sel, map_view, center=center, zoom=zoom)
     event = st.plotly_chart(fig, key="main_map", on_select="rerun", width="stretch")
 
     pts = (event.selection.points if event and event.selection else [])
