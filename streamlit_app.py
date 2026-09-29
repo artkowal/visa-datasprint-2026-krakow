@@ -95,36 +95,49 @@ map_view = st.radio(
 
 _render_dominant_map = (map_view == "Dominujące kategorie")
 
+# ── Cache figur mapy ──────────────────────────────────────────────────────────
+_FIGURE_CACHE: dict = {}
+_FIGURE_CACHE_MAX = 40
+
+def _get_figure(sel: set, view_mode: str):
+    key = (frozenset(sel), view_mode)
+    if key not in _FIGURE_CACHE:
+        if len(_FIGURE_CACHE) >= _FIGURE_CACHE_MAX:
+            _FIGURE_CACHE.pop(next(iter(_FIGURE_CACHE)))
+        _FIGURE_CACHE[key] = build_map(
+            GEOJSON_PATH, sel,
+            gminy_geojson=gminy_geojson,
+            center=(52.0, 19.5),
+            zoom=6,
+            centroids=centroids,
+            dominant=dominant_data if view_mode == "Dominujące kategorie" else None,
+        )
+    return _FIGURE_CACHE[key]
+
 # ── Mapa w @st.fragment ───────────────────────────────────────────────────────
 @st.fragment
 def map_fragment():
     sel = st.session_state["selected"]
 
+    # Wyszukiwarka — klucz z licznikiem wymusza reset po wyborze
+    _reset = st.session_state.get("_search_reset", 0)
     _sc, _ = st.columns([3, 7])
     with _sc:
         search = st.selectbox(
             "Szukaj gminy",
             [None] + sorted(centroids.keys()),
-            key="gmina_search",
+            key=f"gmina_search_{_reset}",
             label_visibility="collapsed",
             placeholder="🔍 Szukaj gminy…",
             index=0,
         )
-    if search and search not in sel:
+    if search:
         sel.add(search)
         st.session_state["selected"] = sel
-        st.session_state["gmina_search"] = None
+        st.session_state["_search_reset"] = _reset + 1
         st.rerun(scope="app")
 
-    with st.spinner("Ładuję mapę…"):
-        fig = build_map(
-            GEOJSON_PATH, sel,
-            gminy_geojson=gminy_geojson,
-            center=tuple(st.session_state["map_center"]),
-            zoom=st.session_state["map_zoom"],
-            centroids=centroids,
-            dominant=dominant_data if _render_dominant_map else None,
-        )
+    fig = _get_figure(sel, map_view)
     # on_select="rerun" → Streamlit rerenderuje tylko fragment przy kliknięciu
     # uirevision w fig → Plotly zachowuje viewport (pan/zoom) między rerenderami
     event = st.plotly_chart(fig, key="main_map", on_select="rerun", width="stretch")
