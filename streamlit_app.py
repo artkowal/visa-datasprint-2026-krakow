@@ -1,3 +1,4 @@
+import math
 import streamlit as st
 from app.map_builder import build_map, load_gminy_data
 from app.analytics import run_residents_analysis
@@ -5,6 +6,23 @@ from app.marts import get_gmina, ensure_topic
 
 GEOJSON_PATH = "geojson/postcodes_poland.geojson"
 MAP_HEIGHT = 500
+
+
+def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
+    return R * 2 * math.asin(math.sqrt(a))
+
+
+def find_neighbors(center: str, centroids: dict, radius_km: float) -> set[str]:
+    """Zwraca zbiór gmin (łącznie z center) w promieniu radius_km od centroidu center."""
+    if center not in centroids:
+        return {center}
+    lat1, lon1 = centroids[center]
+    return {g for g, (lat2, lon2) in centroids.items()
+            if _haversine(lat1, lon1, lat2, lon2) <= radius_km}
 
 st.set_page_config(
     page_title="Visa City Analytics",
@@ -18,6 +36,8 @@ st.markdown("""
     .stApp { background: #1e1e2e; color: #cdd6f4; }
     h1, h2, h3 { color: #a78bfa !important; }
     div[data-testid="stMetric"] { background: #2a2a3e; border-radius: 8px; padding: 10px; }
+    /* mniejsza przezroczystość podczas rerunu fragmentu */
+    [data-stale="true"] { opacity: 0.75 !important; transition: opacity 0.15s; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -28,7 +48,7 @@ st.title("Visa — Porównanie gmin")
 def load_gminy():
     return load_gminy_data(GEOJSON_PATH)
 
-gminy_geojson, gmina_to_postcodes, _ = load_gminy()
+gminy_geojson, gmina_to_postcodes, centroids = load_gminy()
 
 # mapowanie kod → gmina (odwrócone)
 code_to_gmina = {code: gmina for gmina, codes in gmina_to_postcodes.items() for code in codes}
@@ -42,19 +62,45 @@ if "map_zoom" not in st.session_state:
     st.session_state["map_zoom"] = 6
 if "_last_click" not in st.session_state:
     st.session_state["_last_click"] = None
+if "mode" not in st.session_state:
+    st.session_state["mode"] = "standard"
+if "radius_km" not in st.session_state:
+    st.session_state["radius_km"] = 10
+if "center_gmina" not in st.session_state:
+    st.session_state["center_gmina"] = None
 
 selected: set[str] = st.session_state["selected"]
+
+# ── Ustawienia w popover ──────────────────────────────────────────────────────
+with st.popover("⚙️ Ustawienia"):
+    st.radio(
+        "Tryb analizy",
+        options=["standard", "wspolpraca"],
+        format_func=lambda x: "🖱️ Standard — kliknij gminę aby ją zaznaczyć"
+                               if x == "standard"
+                               else "🤝 Współpraca graniczna — zaznacza sąsiednie gminy",
+        key="mode",
+    )
+    if st.session_state["mode"] == "wspolpraca":
+        st.slider(
+            "Promień (km)", min_value=5, max_value=150,
+            value=st.session_state["radius_km"], step=5,
+            key="radius_km",
+        )
 
 # ── Mapa w @st.fragment ───────────────────────────────────────────────────────
 @st.fragment
 def map_fragment():
     sel = st.session_state["selected"]
-    fig = build_map(
-        GEOJSON_PATH, sel,
-        gminy_geojson=gminy_geojson,
-        center=tuple(st.session_state["map_center"]),
-        zoom=st.session_state["map_zoom"],
-    )
+    with st.spinner("Ładuję mapę…"):
+        fig = build_map(
+            GEOJSON_PATH, sel,
+            gminy_geojson=gminy_geojson,
+            center=tuple(st.session_state["map_center"]),
+            zoom=st.session_state["map_zoom"],
+            center_gmina=st.session_state.get("center_gmina"),
+            centroids=centroids,
+        )
     # on_select="rerun" → Streamlit rerenderuje tylko fragment przy kliknięciu
     # uirevision w fig → Plotly zachowuje viewport (pan/zoom) między rerenderami
     event = st.plotly_chart(fig, key="main_map", on_select="rerun", use_container_width=True)
@@ -64,10 +110,22 @@ def map_fragment():
         gmina = pts[0].get("location", "")
         if gmina and gmina != st.session_state["_last_click"]:
             st.session_state["_last_click"] = gmina
-            if gmina in sel:
-                sel.discard(gmina)
+
+            if st.session_state["mode"] == "wspolpraca":
+                neighbors = find_neighbors(gmina, centroids, st.session_state["radius_km"])
+                sel.clear()
+                sel.update(neighbors)
+                st.session_state["center_gmina"] = gmina
+                st.toast(f"Obszar: {gmina} + {len(neighbors)-1} sąsiednich gmin", icon="🤝")
             else:
-                sel.add(gmina)
+                st.session_state["center_gmina"] = None
+                if gmina in sel:
+                    sel.discard(gmina)
+                    st.toast(f"Odznaczono: {gmina}", icon="🔲")
+                else:
+                    sel.add(gmina)
+                    st.toast(f"Zaznaczono: {gmina}", icon="📍")
+
             st.session_state["selected"] = sel
             st.rerun(scope="app")
 
@@ -101,12 +159,31 @@ st.markdown("---")
 gminy_list = sorted(selected)
 cols = st.columns(len(gminy_list))
 
+# Pierwsza gmina = referencja dla delta
+ref_summary = marts["summary"].get(gminy_list[0], {}) if gminy_list else {}
+
+def _delta(current, ref, key, pct=False, inverse=False):
+    """Zwraca (delta_str, delta_color) względem referencji lub (None, 'off') dla ref."""
+    if not ref or current is ref_summary:
+        return None, "off"
+    d = current.get(key, 0) - ref.get(key, 0)
+    if d == 0:
+        return None, "off"
+    sign = "+" if d > 0 else ""
+    s = f"{sign}{d:.1f}%" if pct else f"{sign}{d:,}"
+    color = ("inverse" if inverse else "normal")
+    return s, color
+
 for col, gmina in zip(cols, gminy_list):
     postal_codes = tuple(sorted(gmina_to_postcodes.get(gmina, [])))
+    is_ref = (gmina == gminy_list[0])
 
     with col:
         st.markdown(f"## 🏘️ {gmina}")
-        st.caption(f"{len(postal_codes)} kodów pocztowych")
+        if is_ref and len(gminy_list) > 1:
+            st.caption(f"{len(postal_codes)} kodów pocztowych · **baza referencyjna**")
+        else:
+            st.caption(f"{len(postal_codes)} kodów pocztowych")
 
         summary    = marts["summary"].get(gmina, {})
         countries  = marts["by_country"].get(gmina, [])
@@ -121,9 +198,19 @@ for col, gmina in zip(cols, gminy_list):
 
         # ── A. Turyści ────────────────────────────────────────────────────────
         st.markdown("### 🌍 Turyści")
-        m1, m2 = st.columns(2)
-        m1.metric("Transakcje", f"{summary['n_total']:,}")
-        m2.metric("Turyści zagr.", f"{summary['n_foreign']:,}", f"{summary['pct_foreign']}%")
+        m1, m2, m3 = st.columns(3)
+
+        d_total, dc_total   = _delta(summary, ref_summary, "n_total")
+        d_foreign, dc_for   = _delta(summary, ref_summary, "n_foreign")
+        d_pct, dc_pct       = _delta(summary, ref_summary, "pct_foreign", pct=True)
+
+        m1.metric("Transakcje łącznie", f"{summary['n_total']:,}",
+                  delta=d_total, delta_color=dc_total)
+        m2.metric("Turyści zagraniczni", f"{summary['n_foreign']:,}",
+                  delta=d_foreign, delta_color=dc_for)
+        m3.metric("% zagranicznych", f"{summary['pct_foreign']}%",
+                  delta=d_pct, delta_color=dc_pct,
+                  help="Udział transakcji kartami zagranicznymi (issr_jurn ≠ Domestic) wśród wszystkich transakcji w gminie")
 
         if countries:
             import pandas as pd

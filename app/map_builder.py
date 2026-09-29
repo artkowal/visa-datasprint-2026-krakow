@@ -48,6 +48,8 @@ def build_map(
     gminy_geojson: dict | None = None,
     center: tuple[float, float] = (52.0, 19.5),
     zoom: int = 6,
+    center_gmina: str | None = None,
+    centroids: dict | None = None,
 ) -> go.Figure:
     geojson = gminy_geojson
     if geojson is None:
@@ -106,6 +108,40 @@ def build_map(
             marker_line_color="#ffffff",
             hovertemplate="<b>%{location}</b> ✓<extra></extra>",
             name="zaznaczone",
+        ))
+
+    # ── linie od centrum do sąsiadów (tryb współpraca graniczna) ─────────────
+    if center_gmina and centroids and center_gmina in centroids:
+        c_lat, c_lon = centroids[center_gmina]
+        neighbors_to_draw = [g for g in sel_names if g != center_gmina and g in centroids]
+
+        # linie: centrum → każdy sąsiad (None przerywa segment)
+        line_lats, line_lons = [], []
+        for g in neighbors_to_draw:
+            n_lat, n_lon = centroids[g]
+            line_lats += [c_lat, n_lat, None]
+            line_lons += [c_lon, n_lon, None]
+
+        if line_lats:
+            fig.add_trace(go.Scattermap(
+                lat=line_lats,
+                lon=line_lons,
+                mode="lines",
+                line=dict(color="#e2d0ff", width=1.2),
+                hoverinfo="skip",
+                showlegend=False,
+                name="powiązania",
+            ))
+
+        # punkt centrum — wyróżniony
+        fig.add_trace(go.Scattermap(
+            lat=[c_lat],
+            lon=[c_lon],
+            mode="markers",
+            marker=dict(size=12, color="#ffffff", opacity=0.95),
+            hovertemplate=f"<b>{center_gmina}</b><br>centrum obszaru<extra></extra>",
+            showlegend=False,
+            name="centrum",
         ))
 
     # Plotly zoom ~= folium zoom - 1
