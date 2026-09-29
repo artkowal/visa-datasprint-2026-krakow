@@ -34,6 +34,8 @@ def _prepare(lf: pl.LazyFrame) -> pl.LazyFrame:
     schema = lf.collect_schema()
     if schema["prch_dt"].is_numeric():
         date = pl.date(1899, 12, 30) + pl.duration(days=pl.col("prch_dt").cast(pl.Int64))
+    elif schema["prch_dt"] == pl.String:
+        date = pl.col("prch_dt").str.to_date()
     else:
         date = pl.col("prch_dt").cast(pl.Date)
     ts = (
@@ -275,29 +277,26 @@ def run_residents_analysis(
     lf = pl.scan_parquet(parquet)
 
     # ── card_home: modalny pstl_cd_enr z okresów z danymi ────────────────────
+    schema = lf.collect_schema()
+    if schema["prch_dt"].is_numeric():
+        prch_dt_expr = (pl.date(1899, 12, 30) + pl.duration(days=pl.col("prch_dt").cast(pl.Int64)))
+    elif schema["prch_dt"] == pl.String:
+        prch_dt_expr = pl.col("prch_dt").str.to_date()
+    else:
+        prch_dt_expr = pl.col("prch_dt").cast(pl.Date)
+
+    # Porównania dat muszą działać NA prch_dt już rzutowanym — with_columns idzie pierwsze.
     dead = [
-        (pl.col("prch_dt") >= pl.lit(a).cast(pl.Date))
-        & (pl.col("prch_dt") <= pl.lit(b).cast(pl.Date))
+        (pl.col("prch_dt") >= a) & (pl.col("prch_dt") <= b)
         for a, b in _DEAD_WINDOWS
     ]
     in_dead_window = dead[0]
     for d in dead[1:]:
         in_dead_window = in_dead_window | d
 
-    schema = lf.collect_schema()
-    if schema["prch_dt"].is_numeric():
-        prch_dt_expr = (pl.date(1899, 12, 30) + pl.duration(days=pl.col("prch_dt").cast(pl.Int64)))
-    else:
-        prch_dt_expr = pl.col("prch_dt").cast(pl.Date)
-
     home_lf = (
         lf.select("pymt_crd_acct_num_raw", "pstl_cd_enr", "prch_dt")
-        .filter(
-            pl.col("pstl_cd_enr").is_not_null()
-            & ~in_dead_window.replace_strict(
-                {True: True, False: False}, default=False
-            )
-        )
+        .filter(pl.col("pstl_cd_enr").is_not_null())
         .with_columns(prch_dt_expr.alias("prch_dt"))
         .filter(~in_dead_window)
         .group_by("pymt_crd_acct_num_raw", "pstl_cd_enr")

@@ -1,7 +1,12 @@
+import json
+from functools import lru_cache
+from pathlib import Path
+
 import duckdb
 import pandas as pd
 
-DB = "dataset/datasprint_full_data.parquet"
+
+DB = "dataset/datasprint_sample_data.parquet"
 
 
 def _con():
@@ -137,3 +142,80 @@ def get_kanaly(miasto: str) -> pd.DataFrame:
         GROUP BY kanal
         ORDER BY n DESC
     """).df()
+
+
+# ── Tematy JSON (dataset/json, patrz build_marts.py; format: {"cols": [...], "data": {gmina: [[...]]}}) ──
+JSON_DIR = Path("dataset/json")
+_TOPICS = ("t_structure", "t_categories", "t_visitors", "t_payments", "t_months", "t_hours", "t_countries", "t_cards")
+NATIONAL = "_PL"  # klucz z sumą dla całego kraju
+
+
+@lru_cache(maxsize=None)
+def _topic(name: str) -> dict:
+    with open(JSON_DIR / f"{name}.json", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _df(topic: str, gmina: str | None) -> pd.DataFrame:
+    t = _topic(topic)
+    return pd.DataFrame(t["data"].get(gmina or NATIONAL, []), columns=t["cols"])
+
+
+def marts_ready() -> bool:
+    return all((JSON_DIR / f"{t}.json").exists() for t in _TOPICS)
+
+
+def get_marts_meta() -> dict:
+    """Źródło i pokrycie danych (do pokazania użytkownikowi)."""
+    path = JSON_DIR / "_meta.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+
+def get_gmina_group_table() -> pd.DataFrame:
+    """Wszystkie gminy x grupa kategorii (wejście do app.trade): transakcje, kwota, transakcje kartami zagranicznymi."""
+    t = _topic("t_structure")
+    rows = [(g, *r) for g, rs in t["data"].items() if g != NATIONAL for r in rs]
+    df = pd.DataFrame(rows, columns=["gmina", *t["cols"]])
+    df["guest_tx"] = df["n"].where(df["visitor"] == "zagr", 0)
+    return df.groupby(["gmina", "grupa"], as_index=False).agg(n_tx=("n", "sum"), amt=("amt", "sum"), guest_tx=("guest_tx", "sum"))
+
+
+def get_structure(gmina: str) -> pd.DataFrame:
+    """Grupa kategorii x typ kupującego: transakcje i kwota."""
+    return _df("t_structure", gmina).rename(columns={"n": "n_tx"})
+
+
+def get_categories(gmina: str, limit: int = 15) -> pd.DataFrame:
+    """Najczęstsze kategorie sprzedawców w gminie z podziałem na typ kupującego."""
+    return _df("t_categories", gmina).rename(
+        columns={"cat": "kategoria", "n": "n_tx", "avg_amt": "sr_rachunek"}).head(limit)
+
+
+def get_visitors(gmina: str | None) -> pd.DataFrame:
+    return _df("t_visitors", gmina).rename(columns={"n": "n_tx"})
+
+
+def get_payments(gmina: str | None) -> pd.DataFrame:
+    return _df("t_payments", gmina).rename(columns={"n": "n_tx"})
+
+
+def get_months(gmina: str) -> pd.DataFrame:
+    return _df("t_months", gmina).rename(columns={"n": "n_tx"})
+
+
+def get_hours(gmina: str) -> pd.DataFrame:
+    """Godzina (czas PL) x dzień tygodnia (0 = niedziela); hr = -1 oznacza brak czasu w danych."""
+    return _df("t_hours", gmina).rename(columns={"n": "n_tx"})
+
+
+def get_countries(gmina: str, limit: int = 10) -> pd.DataFrame:
+    return _df("t_countries", gmina).rename(
+        columns={"country": "kraj", "n": "n_tx", "avg_amt": "sr_rachunek"}).head(limit)
+
+
+def get_countries_total(gmina: str) -> int:
+    return int(_topic("t_countries").get("extra", {}).get("foreign_total", {}).get(gmina, 0))
+
+
+def get_card_types(gmina: str | None) -> pd.DataFrame:
+    return _df("t_cards", gmina).rename(columns={"n": "n_tx"})
