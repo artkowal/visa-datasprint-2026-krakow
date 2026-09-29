@@ -205,8 +205,6 @@ def load_marts():
 
 marts = load_marts()
 
-st.markdown("---")
-
 gminy_list = sorted(selected)
 
 
@@ -296,8 +294,6 @@ def _comparison_chart(
     return fig
 
 
-st.markdown("---")
-
 # Pierwsza gmina = referencja dla delta
 ref_summary = marts["summary"].get(gminy_list[0], {}) if gminy_list else {}
 
@@ -340,140 +336,142 @@ else:
 
 st.markdown("---")
 
-# ── Pętla 2: szczegółowe statystyki ──────────────────────────────────────────
-cols = st.columns(len(gminy_list))
+# ── Pętla 2: szczegółowe statystyki (każda sekcja = własny st.columns) ────────
+import pandas as pd
 
 
 def _delta(current, ref, key, pct=False, inverse=False):
     if not ref or current is ref_summary:
-        return None, "off"
+        return "—", "off"
     d = current.get(key, 0) - ref.get(key, 0)
     if d == 0:
-        return None, "off"
+        return "—", "off"
     sign = "+" if d > 0 else ""
     s = f"{sign}{d:.1f}%" if pct else f"{sign}{d:,}"
     color = ("inverse" if inverse else "normal")
     return s, color
 
-for col, gmina in zip(cols, gminy_list):
-    is_ref = (gmina == gminy_list[0])
 
+# Zbierz dane wszystkich gmin z góry
+_city = {
+    g: {
+        "summary":   marts["summary"].get(g, {}),
+        "countries": marts["by_country"].get(g, []),
+        "months":    marts["by_month"].get(g, []),
+        "hours":     marts["by_hour"].get(g, []),
+        "cards":     marts["by_card"].get(g, []),
+        "channels":  marts["by_channel"].get(g, []),
+        "residents": marts["residents"].get(g, {}),
+    }
+    for g in gminy_list
+}
+
+# ── Sekcja A: Turyści ─────────────────────────────────────────────────────────
+st.markdown("### 🌍 Turyści")
+for col, gmina in zip(st.columns(len(gminy_list)), gminy_list):
+    summary = _city[gmina]["summary"]
     with col:
-        summary    = marts["summary"].get(gmina, {})
-        countries  = marts["by_country"].get(gmina, [])
-        months     = marts["by_month"].get(gmina, [])
-        hours      = marts["by_hour"].get(gmina, [])
-        cards      = marts["by_card"].get(gmina, [])
-        channels   = marts["by_channel"].get(gmina, [])
-
         if not summary:
             st.warning("Brak danych dla tej gminy.")
             continue
-
-        # ── A. Turyści ────────────────────────────────────────────────────────
-        st.markdown("### 🌍 Turyści")
         m1, m2, m3 = st.columns(3)
-
-        d_total, dc_total   = _delta(summary, ref_summary, "n_total")
+        d_total,   dc_total = _delta(summary, ref_summary, "n_total")
         d_foreign, dc_for   = _delta(summary, ref_summary, "n_foreign")
-        d_pct, dc_pct       = _delta(summary, ref_summary, "pct_foreign", pct=True)
+        d_pct,     dc_pct   = _delta(summary, ref_summary, "pct_foreign", pct=True)
+        m1.metric("Transakcje łącznie",  f"{summary['n_total']:,}",    delta=d_total,   delta_color=dc_total)
+        m2.metric("Turyści zagraniczni", f"{summary['n_foreign']:,}",  delta=d_foreign, delta_color=dc_for)
+        m3.metric("% zagranicznych",     f"{summary['pct_foreign']}%", delta=d_pct,     delta_color=dc_pct,
+                  help="Udział transakcji kartami zagranicznymi wśród wszystkich transakcji w gminie")
 
-        m1.metric("Transakcje łącznie", f"{summary['n_total']:,}",
-                  delta=d_total, delta_color=dc_total)
-        m2.metric("Turyści zagraniczni", f"{summary['n_foreign']:,}",
-                  delta=d_foreign, delta_color=dc_for)
-        m3.metric("% zagranicznych", f"{summary['pct_foreign']}%",
-                  delta=d_pct, delta_color=dc_pct,
-                  help="Udział transakcji kartami zagranicznymi (issr_jurn ≠ Domestic) wśród wszystkich transakcji w gminie")
-
-        if countries:
-            import pandas as pd
+        if _city[gmina]["countries"]:
             st.markdown("**Top kraje gości:**")
-            df = pd.DataFrame(countries)[["country", "n", "pct"]]
+            df = pd.DataFrame(_city[gmina]["countries"])[["country", "n", "pct"]]
             df.columns = ["Kraj", "Transakcje", "%"]
             st.dataframe(df, hide_index=True, width='stretch')
 
-        if months:
-            import pandas as pd
+        if _city[gmina]["months"]:
             st.markdown("**Goście per miesiąc:**")
-            df = pd.DataFrame(months).set_index("month")[["n_foreign"]]
+            df = pd.DataFrame(_city[gmina]["months"]).set_index("month")[["n_foreign"]]
             df.columns = ["Turyści"]
             st.bar_chart(df, width='stretch')
 
-        if cards:
-            import pandas as pd
+        if _city[gmina]["cards"]:
             st.markdown("**Typ karty gości:**")
-            df = pd.DataFrame(cards)[["type", "n", "pct"]]
+            df = pd.DataFrame(_city[gmina]["cards"])[["type", "n", "pct"]]
             df.columns = ["Karta", "Transakcje", "%"]
             st.dataframe(df, hide_index=True, width='stretch')
 
-        # ── C. Czas ───────────────────────────────────────────────────────────
-        st.markdown("### 🕐 Rytm dnia")
-
-        if months:
-            import pandas as pd
+# ── Sekcja B: Rytm dnia ───────────────────────────────────────────────────────
+st.markdown("---")
+st.markdown("### 🕐 Rytm dnia")
+for col, gmina in zip(st.columns(len(gminy_list)), gminy_list):
+    with col:
+        if _city[gmina]["months"]:
             st.markdown("**Trend miesięczny:**")
-            df = pd.DataFrame(months).set_index("month")[["n", "pct_foreign"]]
+            df = pd.DataFrame(_city[gmina]["months"]).set_index("month")[["n", "pct_foreign"]]
             df.columns = ["Transakcje", "% zagranicznych"]
             st.line_chart(df, width='stretch')
 
-        if hours:
-            import pandas as pd
+        if _city[gmina]["hours"]:
             st.markdown("**% turystów per godzina:**")
-            df = pd.DataFrame(hours).set_index("hour")[["pct_foreign"]]
+            df = pd.DataFrame(_city[gmina]["hours"]).set_index("hour")[["pct_foreign"]]
             df.columns = ["% zagranicznych"]
             st.area_chart(df, width='stretch')
 
-        # ── D. Wartość i płatności ────────────────────────────────────────────
-        st.markdown("### 💳 Płatności")
-
-        if channels:
-            import pandas as pd
+# ── Sekcja C: Płatności ───────────────────────────────────────────────────────
+st.markdown("---")
+st.markdown("### 💳 Płatności")
+for col, gmina in zip(st.columns(len(gminy_list)), gminy_list):
+    with col:
+        if _city[gmina]["channels"]:
             st.markdown("**Kanały płatności:**")
-            df = pd.DataFrame(channels)[["channel", "n", "pct"]].head(6)
+            df = pd.DataFrame(_city[gmina]["channels"])[["channel", "n", "pct"]].head(6)
             df.columns = ["Kanał", "Transakcje", "%"]
             st.dataframe(df, hide_index=True, width='stretch')
+        else:
+            st.caption("Brak danych o kanałach płatności.")
 
-        # ── B + E — mieszkańcy (z martu JSON) ────────────────────────────────
-        st.markdown("### 🏠 Mieszkańcy i powiązania")
-        import pandas as pd
-        r = marts["residents"].get(gmina, {})
-
+# ── Sekcja D: Mieszkańcy i powiązania ────────────────────────────────────────
+st.markdown("---")
+st.markdown("### 🏠 Mieszkańcy i powiązania")
+for col, gmina in zip(st.columns(len(gminy_list)), gminy_list):
+    r = _city[gmina]["residents"]
+    with col:
         if not r:
             st.caption("Brak danych o mieszkańcach dla tej gminy.")
-        else:
-            st.caption(f"Karty z przypisanym domem w gminie: {r.get('n_resident_cards', 0):,}")
+            continue
 
-            st.markdown("#### 📊 Wskaźniki syntetyczne")
-            e1, e2, e3 = st.columns(3)
-            e1.metric("Samowystarczalność", f"{r.get('E1_self_sufficiency', 0):.1f}%",
-                      help="% zakupów codziennych robionych lokalnie")
-            e2.metric("Atrakcyjność", f"{r.get('E2_attractiveness', 0):.1f}%",
-                      help="napływ / (napływ + odpływ)")
-            e3.metric("Zależność od gości", f"{r.get('E3_tourism_dependency', 0):.1f}%",
-                      help="% transakcji w obszarze od osób spoza gminy")
+        st.caption(f"Karty z przypisanym domem w gminie: {r.get('n_resident_cards', 0):,}")
+        st.markdown("#### 📊 Wskaźniki syntetyczne")
+        e1, e2, e3 = st.columns(3)
+        e1.metric("Samowystarczalność", f"{r.get('E1_self_sufficiency', 0):.1f}%",
+                  help="% zakupów codziennych robionych lokalnie")
+        e2.metric("Atrakcyjność", f"{r.get('E2_attractiveness', 0):.1f}%",
+                  help="napływ / (napływ + odpływ)")
+        e3.metric("Zależność od gości", f"{r.get('E3_tourism_dependency', 0):.1f}%",
+                  help="% transakcji w obszarze od osób spoza gminy")
 
-            if r.get("E5_connections"):
-                st.markdown("#### 🔗 Powiązania z innymi gminami")
-                st.dataframe(
-                    pd.DataFrame(r["E5_connections"])
-                      .rename(columns={"gmina":"Gmina","kierunek":"↔","n_out":"Odpływ →","n_in":"Napływ ←","flow_total":"Łącznie"}),
-                    hide_index=True, width='stretch')
+        if r.get("E5_connections"):
+            st.markdown("#### 🔗 Powiązania z innymi gminami")
+            st.dataframe(
+                pd.DataFrame(r["E5_connections"])
+                  .rename(columns={"gmina":"Gmina","kierunek":"↔","n_out":"Odpływ →","n_in":"Napływ ←","flow_total":"Łącznie"}),
+                hide_index=True, width='stretch')
 
-            if r.get("B2_outflow"):
-                st.markdown("#### 🚗 Dokąd wyjeżdżają mieszkańcy")
-                df = pd.DataFrame(r["B2_outflow"]).rename(columns={"area_gmina":"Gmina","n":"Transakcje"})
-                st.bar_chart(df.set_index("Gmina"), width='stretch')
+        if r.get("B2_outflow"):
+            st.markdown("#### 🚗 Dokąd wyjeżdżają mieszkańcy")
+            df = pd.DataFrame(r["B2_outflow"]).rename(columns={"area_gmina":"Gmina","n":"Transakcje"})
+            st.bar_chart(df.set_index("Gmina"), width='stretch')
 
-            if r.get("B3_inflow"):
-                st.markdown("#### 🏙️ Skąd przyjeżdżają do gminy")
-                df = pd.DataFrame(r["B3_inflow"]).rename(columns={"home_gmina":"Gmina","n":"Transakcje"})
-                st.bar_chart(df.set_index("Gmina"), width='stretch')
+        if r.get("B3_inflow"):
+            st.markdown("#### 🏙️ Skąd przyjeżdżają do gminy")
+            df = pd.DataFrame(r["B3_inflow"]).rename(columns={"home_gmina":"Gmina","n":"Transakcje"})
+            st.bar_chart(df.set_index("Gmina"), width='stretch')
 
-            if r.get("B4_outflow_cat"):
-                st.markdown("#### 🛒 Czego szukają poza gminą")
-                df = pd.DataFrame(r["B4_outflow_cat"])
-                total = df["n"].sum()
-                df["%"] = (df["n"] / total * 100).round(1).astype(str) + "%"
-                df = df.rename(columns={"mrch_catg_nm": "Kategoria", "n": "Transakcje"})
-                st.dataframe(df[["Kategoria", "Transakcje", "%"]], hide_index=True, width='stretch')
+        if r.get("B4_outflow_cat"):
+            st.markdown("#### 🛒 Czego szukają poza gminą")
+            df = pd.DataFrame(r["B4_outflow_cat"])
+            total = df["n"].sum()
+            df["%"] = (df["n"] / total * 100).round(1).astype(str) + "%"
+            df = df.rename(columns={"mrch_catg_nm": "Kategoria", "n": "Transakcje"})
+            st.dataframe(df[["Kategoria", "Transakcje", "%"]], hide_index=True, width='stretch')
