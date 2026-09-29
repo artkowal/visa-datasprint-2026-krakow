@@ -473,16 +473,77 @@ def _build_residents(gmina_to_codes: dict) -> dict:
     return out
 
 
+def _build_t_dominant(gmina_to_codes: dict) -> dict:
+    """
+    Dominująca grupa kategorii per gmina — format t_*.json dla app/queries.py.
+    Zwraca {"cols": [...], "data": {gmina: [[grupa, n, pct, avg_amt]]}}.
+    """
+    import pandas as pd
+    from app.categories import CATEGORY_TO_GROUP
+
+    POSTAL = "dataset/marts/postal_gmina.parquet"
+
+    cat_map = pd.DataFrame({
+        "cat":   list(CATEGORY_TO_GROUP.keys()),
+        "grupa": list(CATEGORY_TO_GROUP.values()),
+    })
+
+    con = _con()
+    con.register("cat_map", cat_map)
+
+    df = con.execute(f"""
+        WITH base AS (
+            SELECT
+                pg.gmina,
+                coalesce(cm.grupa, 'Inne') AS grupa,
+                COUNT(*) AS n_tx,
+                SUM(CAST(t.cs_tran_amt AS DOUBLE)) AS amt
+            FROM read_parquet('{PARQUET}') t
+            JOIN read_parquet('{POSTAL}') pg
+              ON pg.postal = TRIM(CAST(t.mrch_postal_code AS VARCHAR))
+            LEFT JOIN cat_map cm ON cm.cat = t.mrch_catg_nm
+            WHERE t.mrch_ctry_nm = 'POLAND'
+              AND t.prod_id_pltfrm_cd_vcis = 'CN'
+              AND t.transaction_type <> 'ATM'
+              AND t.channel_flg <> 'cash'
+              AND pg.gmina IS NOT NULL
+            GROUP BY pg.gmina, coalesce(cm.grupa, 'Inne')
+        ),
+        totals AS (
+            SELECT gmina, SUM(n_tx) AS n_total FROM base GROUP BY gmina
+        ),
+        ranked AS (
+            SELECT
+                b.gmina, b.grupa, b.n_tx,
+                ROUND(100.0 * b.n_tx / t.n_total, 1) AS pct,
+                ROUND(b.amt / b.n_tx, 1) AS avg_amt,
+                ROW_NUMBER() OVER (PARTITION BY b.gmina ORDER BY b.n_tx DESC) AS rk
+            FROM base b JOIN totals t USING (gmina)
+        )
+        SELECT gmina, grupa, n_tx, pct, avg_amt
+        FROM ranked WHERE rk = 1
+        ORDER BY gmina
+    """).df()
+    con.close()
+
+    data = {}
+    for _, row in df.iterrows():
+        data[row["gmina"]] = [[row["grupa"], int(row["n_tx"]), float(row["pct"]), float(row["avg_amt"])]]
+
+    return {"cols": ["grupa", "n", "pct", "avg_amt"], "data": data}
+
+
 # ── rejestr tematów ───────────────────────────────────────────────────────────
 
 TOPICS: dict[str, Callable] = {
-    "summary":    _build_summary,
-    "by_country": _build_by_country,
-    "by_month":   _build_by_month,
-    "by_hour":    _build_by_hour,
-    "by_card":    _build_by_card,
-    "by_channel": _build_by_channel,
-    "residents":  _build_residents,
+    "summary":     _build_summary,
+    "by_country":  _build_by_country,
+    "by_month":    _build_by_month,
+    "by_hour":     _build_by_hour,
+    "by_card":     _build_by_card,
+    "by_channel":  _build_by_channel,
+    "residents":   _build_residents,
+    "t_dominant":  _build_t_dominant,
 }
 
 # ── publiczne API ─────────────────────────────────────────────────────────────

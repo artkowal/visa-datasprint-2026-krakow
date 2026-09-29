@@ -160,7 +160,7 @@ else:
 def load_marts():
     return {
         topic: ensure_topic(topic)
-        for topic in ["summary", "by_country", "by_month", "by_hour", "by_card", "by_channel", "residents"]
+        for topic in ["summary", "by_country", "by_month", "by_hour", "by_card", "by_channel", "residents", "t_dominant"]
     }
 
 marts = load_marts()
@@ -309,5 +309,8 @@ for col, gmina in zip(cols, gminy_list):
 
             if r.get("B4_outflow_cat"):
                 st.markdown("#### 🛒 Czego szukają poza gminą")
-                df = pd.DataFrame(r["B4_outflow_cat"]).rename(columns={"mrch_catg_nm":"Kategoria","n":"Transakcje"})
-                st.dataframe(df, hide_index=True, width='stretch')
+                df = pd.DataFrame(r["B4_outflow_cat"])
+                total = df["n"].sum()
+                df["%"] = (df["n"] / total * 100).round(1).astype(str) + "%"
+                df = df.rename(columns={"mrch_catg_nm": "Kategoria", "n": "Transakcje"})
+                st.dataframe(df[["Kategoria", "Transakcje", "%"]], hide_index=True, width='stretch')
