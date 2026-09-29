@@ -1,10 +1,17 @@
 from pathlib import Path
 
+import plotly.io as pio
 import streamlit as st
 from app.map_builder import build_map, load_gminy_data
 from app.analytics import run_residents_analysis
 from app.marts import get_gmina, ensure_topic
 from app import queries as q
+
+# Faster Plotly JSON serialization (requires orjson)
+try:
+    pio.json.config.default_engine = "orjson"
+except Exception:
+    pass
 
 GEOJSON_PATH = "geojson/postcodes_poland.geojson"
 MAP_HEIGHT = 500
@@ -79,23 +86,78 @@ map_view = st.radio(
 
 _render_dominant_map = (map_view == "Dominujące kategorie")
 
+# ── Pamięć podręczna figur ────────────────────────────────────────────────────
+# Klucz: (frozenset(selected), view_mode) → go.Figure
+# Unikamy przebudowy identycznej figury przy każdym renderze fragmentu.
+_FIGURE_CACHE: dict = {}
+_FIGURE_CACHE_MAX = 40
+
+def _get_figure(sel: set, view_mode: str) -> "go.Figure":
+    key = (frozenset(sel), view_mode)
+    if key not in _FIGURE_CACHE:
+        if len(_FIGURE_CACHE) >= _FIGURE_CACHE_MAX:
+            _FIGURE_CACHE.pop(next(iter(_FIGURE_CACHE)))
+        _FIGURE_CACHE[key] = build_map(
+            GEOJSON_PATH, sel,
+            gminy_geojson=gminy_geojson,
+            center=(52.0, 19.5),
+            zoom=6,
+            centroids=centroids,
+            dominant=dominant_data if view_mode == "Dominujące kategorie" else None,
+        )
+    return _FIGURE_CACHE[key]
+
 # ── Mapa w @st.fragment ───────────────────────────────────────────────────────
 @st.fragment
 def map_fragment():
     sel = st.session_state["selected"]
-    with st.spinner("Ładuję mapę…"):
-        fig = build_map(
-            GEOJSON_PATH, sel,
-            gminy_geojson=gminy_geojson,
-            center=tuple(st.session_state["map_center"]),
-            zoom=st.session_state["map_zoom"],
-            centroids=centroids,
-            dominant=dominant_data if _render_dominant_map else None,
+
+    # ── Search nad mapą ───────────────────────────────────────────────────
+    _sc, _ = st.columns([3, 7])
+    with _sc:
+        search = st.selectbox(
+            "Szukaj gminy",
+            [None] + sorted(centroids.keys()),
+            key="gmina_search",
+            label_visibility="collapsed",
+            placeholder="🔍 Szukaj gminy…",
+            index=0,
         )
-    # on_select="rerun" → Streamlit rerenderuje tylko fragment przy kliknięciu
-    # uirevision w fig → Plotly zachowuje viewport (pan/zoom) między rerenderami
+
+    fig = _get_figure(sel, map_view)
     event = st.plotly_chart(fig, key="main_map", on_select="rerun", width="stretch")
 
+    # Animuj centrum JS — bez przebudowy mapy
+    fly_to = st.session_state.pop("_fly_to", None)
+    if fly_to:
+        lat, lon, zoom = fly_to
+        st.components.v1.html(f"""
+        <script>
+        (function() {{
+            var tries = 0;
+            function fly() {{
+                var plots = window.parent.document.querySelectorAll('.js-plotly-plot');
+                if (plots.length && window.parent.Plotly) {{
+                    window.parent.Plotly.relayout(plots[0], {{
+                        'map.center': {{lat: {lat}, lon: {lon}}},
+                        'map.zoom': {zoom}
+                    }});
+                }} else if (tries++ < 20) {{
+                    setTimeout(fly, 100);
+                }}
+            }}
+            fly();
+        }})();
+        </script>
+        """, height=0)
+
+    if search:
+        lat, lon = centroids[search]
+        st.session_state["_fly_to"] = (lat, lon, 9)
+        del st.session_state["gmina_search"]
+        st.rerun(scope="fragment")
+
+    # ── Kliknięcie w mapę ─────────────────────────────────────────────────
     pts = (event.selection.points if event and event.selection else [])
     if pts:
         gmina = pts[0].get("location", "")
@@ -111,6 +173,9 @@ def map_fragment():
             st.rerun(scope="app")
 
 map_fragment()
+
+# Jeśli search zrobił scope="fragment", selected mogło się zmienić — odśwież stronę
+selected = st.session_state["selected"]
 
 # ── Pasek wybranych + wyczyść ─────────────────────────────────────────────────
 if selected:
@@ -142,6 +207,10 @@ cols = st.columns(len(gminy_list))
 
 # Pierwsza gmina = referencja dla delta
 ref_summary = marts["summary"].get(gminy_list[0], {}) if gminy_list else {}
+
+def _fmt_month(m) -> str:
+    s = str(int(m))
+    return f"{s[:4]}-{s[4:]}"
 
 def _delta(current, ref, key, pct=False, inverse=False):
     """Zwraca (delta_str, delta_color) względem referencji lub (None, 'off') dla ref."""
@@ -214,6 +283,7 @@ for col, gmina in zip(cols, gminy_list):
             import pandas as pd
             st.markdown("**Goście per miesiąc:**")
             df = pd.DataFrame(months).set_index("month")[["n_foreign"]]
+            df.index = df.index.map(_fmt_month)
             df.columns = ["Turyści"]
             st.bar_chart(df, width='stretch')
 
@@ -231,6 +301,7 @@ for col, gmina in zip(cols, gminy_list):
             import pandas as pd
             st.markdown("**Trend miesięczny:**")
             df = pd.DataFrame(months).set_index("month")[["n", "pct_foreign"]]
+            df.index = df.index.map(_fmt_month)
             df.columns = ["Transakcje", "% zagranicznych"]
             st.line_chart(df, width='stretch')
 
