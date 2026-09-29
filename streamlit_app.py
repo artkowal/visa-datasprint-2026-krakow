@@ -42,6 +42,16 @@ def load_dominant() -> dict:
 
 dominant_data = load_dominant()
 
+@st.cache_resource(show_spinner=False)
+def load_cat_profiles() -> dict:
+    try:
+        from app.matching_real import load_display_profiles
+        return load_display_profiles()
+    except Exception:
+        return {}
+
+cat_profiles = load_cat_profiles()
+
 # mapowanie kod → gmina (odwrócone)
 code_to_gmina = {code: gmina for gmina, codes in gmina_to_postcodes.items() for code in codes}
 
@@ -126,13 +136,143 @@ marts = load_marts()
 st.markdown("---")
 
 gminy_list = sorted(selected)
-cols = st.columns(len(gminy_list))
+
+
+def _comparison_chart(
+    gminy: list[str], profiles: dict, dominant: dict, diff_mode: bool = False
+) -> "go.Figure":
+    import plotly.graph_objects as go
+    from app.categories import GROUP_ICONS, GROUP_ORDER
+
+    CATS = [g for g in GROUP_ORDER if g not in {"Handel internetowy", "Inne"}]
+    ref_prof = profiles.get(gminy[0], {})
+    GMINA_COLORS = ["#6366f1", "#2dd4bf", "#fb923c", "#60a5fa"]
+
+    # Sortowanie wg wariancji między gminami — kategorie gdzie są różnice idą na lewo
+    if len(gminy) > 1:
+        def _var(c):
+            vals = [profiles.get(g, {}).get(c, 0) for g in gminy]
+            m = sum(vals) / len(vals)
+            return sum((v - m) ** 2 for v in vals)
+        sorted_cats = sorted(CATS, key=_var, reverse=True)
+    else:
+        sorted_cats = sorted(CATS, key=lambda c: ref_prof.get(c, 0), reverse=True)
+
+    x_labels = [f"{GROUP_ICONS.get(c, '')} {c}" for c in sorted_cats]
+
+    fig = go.Figure()
+
+    for idx, gmina in enumerate(gminy):
+        prof = profiles.get(gmina, {})
+        dom_group = dominant.get(gmina, {}).get("grupa")
+        is_ref = (idx == 0)
+
+        color = GMINA_COLORS[idx % len(GMINA_COLORS)]
+
+        if diff_mode:
+            vals = [(prof.get(c, 0) - ref_prof.get(c, 0)) * 100 for c in sorted_cats]
+            if is_ref:
+                continue  # ref = linia zerowa, nie rysujemy
+            text_vals = [f"+{v:.1f}pp" if v >= 0.5 else (f"{v:.1f}pp" if v <= -0.5 else "") for v in vals]
+        else:
+            vals = [prof.get(c, 0) * 100 for c in sorted_cats]
+            text_vals = [f"{v:.0f}%" if v >= 1 else "" for v in vals]
+
+        bar_colors = color
+
+        hover_name = gmina + (" (ref)" if is_ref else "")
+        hover_tmpl = (
+            f"<b>{gmina}</b><br>%{{x}}: %{{y:+.1f}} pp od ref<extra></extra>"
+            if diff_mode else
+            f"<b>{gmina}</b><br>%{{x}}: %{{y:.1f}}%<extra></extra>"
+        )
+
+        fig.add_trace(go.Bar(
+            name=hover_name,
+            x=x_labels,
+            y=vals,
+            marker_color=bar_colors,
+            text=text_vals,
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate=hover_tmpl,
+        ))
+
+    y_title = "odchylenie od ref (pp)" if diff_mode else "udział transakcji (%)"
+    fig.update_layout(
+        barmode="group",
+        height=420,
+        margin={"l": 0, "r": 10, "t": 30, "b": 10},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font={"color": "#cdd6f4", "size": 11},
+        xaxis=dict(tickangle=-38, showgrid=False, zeroline=False, tickfont={"size": 10}),
+        yaxis=dict(
+            showgrid=True,
+            gridcolor="#2a2a3e",
+            zeroline=diff_mode,
+            zerolinecolor="#6366f1",
+            zerolinewidth=1.5,
+            ticksuffix="pp" if diff_mode else "%",
+            title=dict(text=y_title, font={"size": 11}),
+        ),
+        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0),
+        bargap=0.18,
+        bargroupgap=0.04,
+        hoverlabel=dict(bgcolor="#2a2a3e", font_color="#cdd6f4"),
+    )
+    return fig
+
+
+st.markdown("---")
 
 # Pierwsza gmina = referencja dla delta
 ref_summary = marts["summary"].get(gminy_list[0], {}) if gminy_list else {}
 
+# ── Pętla 1: nagłówki — nazwa + dominująca kategoria ─────────────────────────
+hdr_cols = st.columns(len(gminy_list))
+for col, gmina in zip(hdr_cols, gminy_list):
+    is_ref = (gmina == gminy_list[0])
+    with col:
+        dom = dominant_data.get(gmina)
+        st.markdown(f"## 🏘️ {gmina}")
+        if dom:
+            from app.categories import GROUP_ICONS
+            icon = GROUP_ICONS.get(dom["grupa"], "🏷️")
+            st.markdown(f"{icon} **{dom['grupa']}** · {dom['pct']}% transakcji · śr. {dom['avg_amt']} zł")
+        if is_ref and len(gminy_list) > 1:
+            st.caption("baza referencyjna")
+
+# ── Wykres profilu kategorii (full-width, już po nagłówkach) ──────────────────
+st.markdown("### 📊 Profil kategorii")
+if any(g in cat_profiles for g in gminy_list):
+    _chart_cols2 = st.columns([3, 2])
+    with _chart_cols2[0]:
+        _diff_mode2 = st.toggle(
+            "Różnice od ref (odchylenie pp)",
+            value=False,
+            key="cat_diff_toggle",
+            disabled=len(gminy_list) == 1,
+            help="Zamiast wartości bezwzględnych pokazuje o ile pp dana gmina różni się od pierwszej wybranej.",
+        )
+    with _chart_cols2[1]:
+        if _diff_mode2:
+            st.caption("Oś X sortowana wg rozrzutu — największe różnice z lewej.")
+    st.plotly_chart(
+        _comparison_chart(gminy_list, cat_profiles, dominant_data, diff_mode=_diff_mode2),
+        key="cat_comparison2",
+        width="stretch",
+    )
+else:
+    st.info("Brak danych profilu kategorii. Wygeneruj `by_category.json`.")
+
+st.markdown("---")
+
+# ── Pętla 2: szczegółowe statystyki ──────────────────────────────────────────
+cols = st.columns(len(gminy_list))
+
+
 def _delta(current, ref, key, pct=False, inverse=False):
-    """Zwraca (delta_str, delta_color) względem referencji lub (None, 'off') dla ref."""
     if not ref or current is ref_summary:
         return None, "off"
     d = current.get(key, 0) - ref.get(key, 0)
@@ -144,16 +284,9 @@ def _delta(current, ref, key, pct=False, inverse=False):
     return s, color
 
 for col, gmina in zip(cols, gminy_list):
-    postal_codes = tuple(sorted(gmina_to_postcodes.get(gmina, [])))
     is_ref = (gmina == gminy_list[0])
 
     with col:
-        st.markdown(f"## 🏘️ {gmina}")
-        if is_ref and len(gminy_list) > 1:
-            st.caption(f"{len(postal_codes)} kodów pocztowych · **baza referencyjna**")
-        else:
-            st.caption(f"{len(postal_codes)} kodów pocztowych")
-
         summary    = marts["summary"].get(gmina, {})
         countries  = marts["by_country"].get(gmina, [])
         months     = marts["by_month"].get(gmina, [])
@@ -164,16 +297,6 @@ for col, gmina in zip(cols, gminy_list):
         if not summary:
             st.warning("Brak danych dla tej gminy.")
             continue
-
-        # ── Dominująca kategoria ─────────────────────────────────────────────
-        dom = dominant_data.get(gmina)
-        if dom:
-            from app.categories import GROUP_ICONS
-            icon = GROUP_ICONS.get(dom["grupa"], "🏷️")
-            st.markdown(
-                f"**Dominująca kategoria:** {icon} **{dom['grupa']}** "
-                f"— {dom['pct']}% transakcji · śr. {dom['avg_amt']} zł"
-            )
 
         # ── A. Turyści ────────────────────────────────────────────────────────
         st.markdown("### 🌍 Turyści")
