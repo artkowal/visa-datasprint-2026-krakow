@@ -7,3 +7,4 @@ streamlit-folium
 folium
 matplotlib
 scikit-learn
+geopandas
