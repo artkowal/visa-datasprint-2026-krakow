@@ -1,15 +1,23 @@
+from pathlib import Path
+
+import plotly.io as pio
 import streamlit as st
 from app.map_builder import build_map, load_gminy_data
 from app.analytics import run_residents_analysis
 from app.marts import get_gmina, ensure_topic
 from app import queries as q
 
+try:
+    pio.json.config.default_engine = "orjson"
+except Exception:
+    pass
+
 GEOJSON_PATH = "geojson/postcodes_poland.geojson"
 MAP_HEIGHT = 500
 
 st.set_page_config(
-    page_title="Visa City Analytics",
-    page_icon="",
+    page_title="Megapolis VISA",
+    page_icon="🗺️",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -24,7 +32,17 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("Visa — Porównanie gmin")
+logo_col, note_col = st.columns([3, 2], gap="large", vertical_alignment="center")
+with logo_col:
+    st.image(str(Path(__file__).resolve().parent / "assets" / "megapolis-visa.svg"), use_container_width=True)
+with note_col:
+    st.markdown(
+        '<div style="padding:16px 20px;border-left:3px solid #f7bb42;'
+        'border-radius:8px;background:#282c44;color:#cdd6f4;line-height:1.45">'
+        'Zobacz, gdzie gminy współpracują i jakie funkcje mogą rozwijać razem.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
 # ── Dane gmin ─────────────────────────────────────────────────────────────────
 @st.cache_resource(show_spinner="Scalanie kodów pocztowych w gminy…")
@@ -81,6 +99,23 @@ _render_dominant_map = (map_view == "Dominujące kategorie")
 @st.fragment
 def map_fragment():
     sel = st.session_state["selected"]
+
+    _sc, _ = st.columns([3, 7])
+    with _sc:
+        search = st.selectbox(
+            "Szukaj gminy",
+            [None] + sorted(centroids.keys()),
+            key="gmina_search",
+            label_visibility="collapsed",
+            placeholder="🔍 Szukaj gminy…",
+            index=0,
+        )
+    if search and search not in sel:
+        sel.add(search)
+        st.session_state["selected"] = sel
+        st.session_state["gmina_search"] = None
+        st.rerun(scope="app")
+
     with st.spinner("Ładuję mapę…"):
         fig = build_map(
             GEOJSON_PATH, sel,
