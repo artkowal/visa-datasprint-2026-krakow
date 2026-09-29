@@ -26,7 +26,7 @@ st.title("Visa")
 def load_gminy():
     return load_gminy_data(GEOJSON_PATH)
 
-gminy_geojson, gmina_to_postcodes = load_gminy()
+gminy_geojson, gmina_to_postcodes, _ = load_gminy()
 
 # ── Session state ─────────────────────────────────────────────────────────────
 if "selected" not in st.session_state:
