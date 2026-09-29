@@ -473,52 +473,16 @@ def _build_residents(gmina_to_codes: dict) -> dict:
     return out
 
 
-def _build_by_category(gmina_to_codes: dict) -> dict:
-    """Udział grup kategorii per gmina — wejście do prawdziwego rankingu Wzmocnienie/Uzupełnienie."""
-    from app.categories import CATEGORY_TO_GROUP
-    from collections import defaultdict
-
-    con = _con()
-    df = con.execute(f"""
-        SELECT
-            TRIM(mrch_postal_code) AS code,
-            COALESCE(CAST(mrch_catg_nm AS VARCHAR), '?') AS cat,
-            COUNT(*) AS n
-        {_base_filter()}
-          AND CAST(prod_id_pltfrm_cd_vcis AS VARCHAR) NOT IN ('CO', 'BZ', 'GV')
-        GROUP BY code, cat
-    """).df()
-    con.close()
-
-    code_to_gmina = {c: g for g, codes in gmina_to_codes.items() for c in codes}
-    df["gmina"] = df["code"].map(code_to_gmina)
-    df = df.dropna(subset=["gmina"])
-    df["grupa"] = df["cat"].map(lambda c: CATEGORY_TO_GROUP.get(c, "Inne"))
-
-    agg: dict = defaultdict(lambda: defaultdict(int))
-    for row in df.itertuples(index=False):
-        agg[row.gmina][row.grupa] += row.n
-
-    out = {}
-    for gmina, counts in agg.items():
-        total = sum(counts.values())
-        if total == 0:
-            continue
-        out[gmina] = {grp: round(n / total, 4) for grp, n in counts.items()}
-    return out
-
-
 # ── rejestr tematów ───────────────────────────────────────────────────────────
 
 TOPICS: dict[str, Callable] = {
-    "summary":      _build_summary,
-    "by_country":   _build_by_country,
-    "by_month":     _build_by_month,
-    "by_hour":      _build_by_hour,
-    "by_card":      _build_by_card,
-    "by_channel":   _build_by_channel,
-    "residents":    _build_residents,
-    "by_category":  _build_by_category,
+    "summary":    _build_summary,
+    "by_country": _build_by_country,
+    "by_month":   _build_by_month,
+    "by_hour":    _build_by_hour,
+    "by_card":    _build_by_card,
+    "by_channel": _build_by_channel,
+    "residents":  _build_residents,
 }
 
 # ── publiczne API ─────────────────────────────────────────────────────────────
