@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="116" viewBox="0 0 680 116" role="img" aria-label="Megapolis VISA &#x2014; potencja&#x0142; wsp&#x00F3;&#x0142;pracy gmin">
+  <defs>
+    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3457d5"/>
+      <stop offset="1" stop-color="#6852bd"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="10" width="94" height="94" rx="22" fill="url(#mark)"/>
+  <path d="M18 75 L32 39 L48 64 L64 34 L80 75" fill="none" stroke="#f8fafc" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M18 75 L48 64 L80 75" fill="none" stroke="#8fe2e0" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="18" cy="75" r="5" fill="#f7bb42"/>
+  <circle cx="32" cy="39" r="5" fill="#8fe2e0"/>
+  <circle cx="48" cy="64" r="5" fill="#f7bb42"/>
+  <circle cx="64" cy="34" r="5" fill="#8fe2e0"/>
+  <circle cx="80" cy="75" r="5" fill="#f7bb42"/>
+  <text x="112" y="64" fill="#f3f4ff" font-family="Segoe UI, Arial, sans-serif" font-size="45" font-weight="700" letter-spacing="2">MEGAPOLIS</text>
+  <rect x="119" y="79" width="82" height="4" rx="2" fill="#f4b844"/>
+  <text x="219" y="87" fill="#aebbd4" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="600" letter-spacing="1.8">POTENCJA&#x0141; WSP&#x00D3;&#x0141;PRACY GMIN</text>
+  <rect x="572" y="10" width="94" height="94" rx="22" fill="#253d91" stroke="#6683eb" stroke-width="1.5"/>
+  <path d="M583 79 H655" stroke="#f7bb42" stroke-width="4" stroke-linecap="round"/>
+  <text x="580" y="66" fill="#fff" font-family="Segoe UI, Arial, sans-serif" font-size="30" font-style="italic" font-weight="900" letter-spacing="1">VISA</text>
+</svg>

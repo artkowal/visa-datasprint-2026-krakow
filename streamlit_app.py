@@ -34,7 +34,7 @@ st.markdown("""
 
 logo_col, note_col = st.columns([3, 2], gap="large", vertical_alignment="center")
 with logo_col:
-    st.image(str(Path(__file__).resolve().parent / "assets" / "megapolis-visa.svg"), use_container_width=True)
+    st.image(str(Path(__file__).resolve().parent / "assets" / "megapolis-visa.svg"), width="stretch")
 with note_col:
     st.markdown(
         '<div style="padding:16px 20px;border-left:3px solid #f7bb42;'
