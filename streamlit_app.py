@@ -3,6 +3,7 @@ import streamlit as st
 from app.map_builder import build_map, load_gminy_data
 from app.analytics import run_residents_analysis
 from app.marts import get_gmina, ensure_topic
+from app.matching_view import render_matching
 
 GEOJSON_PATH = "geojson/postcodes_poland.geojson"
 MAP_HEIGHT = 500
@@ -42,6 +43,16 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("Visa — Porównanie gmin")
+map_view = st.radio(
+    "Widok mapy",
+    ["Statystyki gmin", "Wzmocnienie", "Uzupełnienie"],
+    horizontal=True,
+    index=0,
+    key="main_map_view",
+)
+if map_view != "Statystyki gmin":
+    render_matching(map_view)
+    st.stop()
 
 # ── Dane gmin ─────────────────────────────────────────────────────────────────
 @st.cache_resource(show_spinner="Scalanie kodów pocztowych w gminy…")
