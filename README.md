@@ -1,6 +1,14 @@
 # Visa DATASPRINT 2026 - Krakow
 https://visadatasprint.com/#home
 
+## Dopasowania gmin (demo)
+
+Uruchom `streamlit run streamlit_app.py`. Domyślnie otwiera się widok
+**Statystyki gmin**; u góry można przełączyć na **Wzmocnienie** lub
+**Uzupełnienie**, a następnie wybrać gminę i zasięg.
+Mapa oraz lista pokazują pięć najlepszych dopasowań. Oceny kategorii i ranking
+są syntetycznymi mockami; rzeczywiste jest tylko położenie z GeoJSON.
+
 ## 🚀 Local Setup
 
 We use a standard Python virtual environment (`venv`) to keep project dependencies isolated.
