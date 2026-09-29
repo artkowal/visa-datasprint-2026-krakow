@@ -223,3 +223,6 @@ dataset/*
 *.parquet
 *.csv
 *.zip
+
+# Pycharm
+.idea

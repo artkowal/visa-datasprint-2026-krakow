@@ -2,3 +2,8 @@ pyarrow
 pandas
 duckdb
 polars
+streamlit
+streamlit-folium
+folium
+matplotlib
+scikit-learn
