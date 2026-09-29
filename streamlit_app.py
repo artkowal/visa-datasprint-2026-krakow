@@ -29,6 +29,8 @@ st.markdown("""
     div[data-testid="stMetric"] { background: #2a2a3e; border-radius: 8px; padding: 10px; }
     /* mniejsza przezroczystość podczas rerunu fragmentu */
     [data-stale="true"] { opacity: 0.75 !important; transition: opacity 0.15s; }
+    /* zmniejszone paddingi boczne */
+    .block-container { padding-left: 1.5rem !important; padding-right: 1.5rem !important; max-width: 100% !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -140,7 +142,7 @@ def map_fragment():
         st.session_state["map_center"] = [lat, lon]
         st.session_state["map_zoom"] = 9
         del st.session_state["gmina_search"]
-        st.rerun(scope="fragment")
+        st.rerun(scope="app")
 
     center = tuple(st.session_state["map_center"])
     zoom = st.session_state["map_zoom"]
