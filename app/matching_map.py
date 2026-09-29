@@ -59,10 +59,10 @@ def build_matching_map(
             marker_line_width=1.6,
             marker_line_color="#ffffff",
             hovertemplate=(
-                "<b>%{location}</b><br>#%{customdata[0]} · wynik demo: %{z}/100"
+                "<b>%{location}</b><br>#%{customdata[0]} · wynik: %{z}/100"
                 "<br>%{customdata[1]} km · %{customdata[2]}<extra></extra>"
             ),
-            name="Dopasowania demo",
+            name="Dopasowania",
         ))
     fig.add_trace(go.Choroplethmap(
         geojson=layer({anchor}),

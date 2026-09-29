@@ -228,6 +228,21 @@ def export_json(marts: Path, json_dir: Path, meta: dict) -> None:
     data[NATIONAL] = national("visitor, prem, sum(n_tx)::BIGINT", "g_card", "visitor, prem")
     _write_topic(json_dir, "t_cards", ["visitor", "prem", "n"], data)
 
+    # dominująca grupa kategorii per gmina (top 1 wg liczby transakcji)
+    rows = con.execute(f"""
+        WITH a AS (
+            SELECT c.gmina, coalesce(cm.grupa, 'Inne') AS grupa,
+                   sum(c.n_tx)::BIGINT AS n, round(sum(c.amt), 1) AS amt
+            FROM {t('g_cat')} c LEFT JOIN cat_map cm ON cm.cat = c.cat GROUP BY 1, 2
+        ),
+        tot AS (SELECT gmina, sum(n) AS n_total FROM a GROUP BY 1),
+        r AS (SELECT a.*, row_number() OVER (PARTITION BY a.gmina ORDER BY a.n DESC) AS rk FROM a)
+        SELECT r.gmina, r.grupa, r.n, round(100.0 * r.n / tot.n_total, 1) AS pct, round(r.amt / r.n, 1) AS avg_amt
+        FROM r JOIN tot ON r.gmina = tot.gmina WHERE r.rk = 1 ORDER BY r.gmina
+    """).fetchall()
+    _write_topic(json_dir, "t_dominant", ["grupa", "n", "pct", "avg_amt"],
+                 {g: [[grp, n, pct, avg]] for g, grp, n, pct, avg in rows})
+
     (json_dir / "_meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
     print("JSON gotowy:", json_dir)
 

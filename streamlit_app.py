@@ -1,29 +1,11 @@
-import math
 import streamlit as st
 from app.map_builder import build_map, load_gminy_data
 from app.analytics import run_residents_analysis
 from app.marts import get_gmina, ensure_topic
-from app.matching_view import render_matching
+from app import queries as q
 
 GEOJSON_PATH = "geojson/postcodes_poland.geojson"
 MAP_HEIGHT = 500
-
-
-def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    R = 6371.0
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
-    return R * 2 * math.asin(math.sqrt(a))
-
-
-def find_neighbors(center: str, centroids: dict, radius_km: float) -> set[str]:
-    """Zwraca zbiór gmin (łącznie z center) w promieniu radius_km od centroidu center."""
-    if center not in centroids:
-        return {center}
-    lat1, lon1 = centroids[center]
-    return {g for g, (lat2, lon2) in centroids.items()
-            if _haversine(lat1, lon1, lat2, lon2) <= radius_km}
 
 st.set_page_config(
     page_title="Visa City Analytics",
@@ -43,16 +25,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("Visa — Porównanie gmin")
-map_view = st.radio(
-    "Widok mapy",
-    ["Statystyki gmin", "Wzmocnienie", "Uzupełnienie"],
-    horizontal=True,
-    index=0,
-    key="main_map_view",
-)
-if map_view != "Statystyki gmin":
-    render_matching(map_view)
-    st.stop()
 
 # ── Dane gmin ─────────────────────────────────────────────────────────────────
 @st.cache_resource(show_spinner="Scalanie kodów pocztowych w gminy…")
@@ -60,6 +32,15 @@ def load_gminy():
     return load_gminy_data(GEOJSON_PATH)
 
 gminy_geojson, gmina_to_postcodes, centroids = load_gminy()
+
+@st.cache_resource(show_spinner=False)
+def load_dominant() -> dict:
+    try:
+        return q.get_dominant_categories()
+    except Exception:
+        return {}
+
+dominant_data = load_dominant()
 
 # mapowanie kod → gmina (odwrócone)
 code_to_gmina = {code: gmina for gmina, codes in gmina_to_postcodes.items() for code in codes}
@@ -73,31 +54,18 @@ if "map_zoom" not in st.session_state:
     st.session_state["map_zoom"] = 6
 if "_last_click" not in st.session_state:
     st.session_state["_last_click"] = None
-if "mode" not in st.session_state:
-    st.session_state["mode"] = "standard"
-if "radius_km" not in st.session_state:
-    st.session_state["radius_km"] = 10
-if "center_gmina" not in st.session_state:
-    st.session_state["center_gmina"] = None
-
 selected: set[str] = st.session_state["selected"]
 
-# ── Ustawienia w popover ──────────────────────────────────────────────────────
-with st.popover("⚙️ Ustawienia"):
-    st.radio(
-        "Tryb analizy",
-        options=["standard", "wspolpraca"],
-        format_func=lambda x: "🖱️ Standard — kliknij gminę aby ją zaznaczyć"
-                               if x == "standard"
-                               else "🤝 Współpraca graniczna — zaznacza sąsiednie gminy",
-        key="mode",
-    )
-    if st.session_state["mode"] == "wspolpraca":
-        st.slider(
-            "Promień (km)", min_value=5, max_value=150,
-            value=st.session_state["radius_km"], step=5,
-            key="radius_km",
-        )
+# ── Pasek sterowania ──────────────────────────────────────────────────────────
+map_view = st.radio(
+    "Widok mapy",
+    ["Statystyki gmin", "Dominujące kategorie"],
+    horizontal=True,
+    index=0,
+    key="main_map_view",
+)
+
+_render_dominant_map = (map_view == "Dominujące kategorie")
 
 # ── Mapa w @st.fragment ───────────────────────────────────────────────────────
 @st.fragment
@@ -109,34 +77,24 @@ def map_fragment():
             gminy_geojson=gminy_geojson,
             center=tuple(st.session_state["map_center"]),
             zoom=st.session_state["map_zoom"],
-            center_gmina=st.session_state.get("center_gmina"),
             centroids=centroids,
+            dominant=dominant_data if _render_dominant_map else None,
         )
     # on_select="rerun" → Streamlit rerenderuje tylko fragment przy kliknięciu
     # uirevision w fig → Plotly zachowuje viewport (pan/zoom) między rerenderami
-    event = st.plotly_chart(fig, key="main_map", on_select="rerun", use_container_width=True)
+    event = st.plotly_chart(fig, key="main_map", on_select="rerun", width="stretch")
 
     pts = (event.selection.points if event and event.selection else [])
     if pts:
         gmina = pts[0].get("location", "")
         if gmina and gmina != st.session_state["_last_click"]:
             st.session_state["_last_click"] = gmina
-
-            if st.session_state["mode"] == "wspolpraca":
-                neighbors = find_neighbors(gmina, centroids, st.session_state["radius_km"])
-                sel.clear()
-                sel.update(neighbors)
-                st.session_state["center_gmina"] = gmina
-                st.toast(f"Obszar: {gmina} + {len(neighbors)-1} sąsiednich gmin", icon="🤝")
+            if gmina in sel:
+                sel.discard(gmina)
+                st.toast(f"Odznaczono: {gmina}", icon="🔲")
             else:
-                st.session_state["center_gmina"] = None
-                if gmina in sel:
-                    sel.discard(gmina)
-                    st.toast(f"Odznaczono: {gmina}", icon="🔲")
-                else:
-                    sel.add(gmina)
-                    st.toast(f"Zaznaczono: {gmina}", icon="📍")
-
+                sel.add(gmina)
+                st.toast(f"Zaznaczono: {gmina}", icon="📍")
             st.session_state["selected"] = sel
             st.rerun(scope="app")
 
@@ -206,6 +164,16 @@ for col, gmina in zip(cols, gminy_list):
         if not summary:
             st.warning("Brak danych dla tej gminy.")
             continue
+
+        # ── Dominująca kategoria ─────────────────────────────────────────────
+        dom = dominant_data.get(gmina)
+        if dom:
+            from app.categories import GROUP_ICONS
+            icon = GROUP_ICONS.get(dom["grupa"], "🏷️")
+            st.markdown(
+                f"**Dominująca kategoria:** {icon} **{dom['grupa']}** "
+                f"— {dom['pct']}% transakcji · śr. {dom['avg_amt']} zł"
+            )
 
         # ── A. Turyści ────────────────────────────────────────────────────────
         st.markdown("### 🌍 Turyści")

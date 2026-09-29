@@ -126,7 +126,7 @@ def _section_visitors(g: str, vis: pd.DataFrame, nat_vis: pd.DataFrame, meta: di
         v.reset_index().assign(metryka="Wartość zakupów", val=lambda d: d["amt"]),
     ])
     st.altair_chart(_stacked_visitor_bar(bars, "metryka", "val", y_sort=["Liczba transakcji", "Wartość zakupów"],
-                                         height=110, normalize=True), use_container_width=True)
+                                         height=110, normalize=True), width="stretch")
 
     known_pl = v.loc["mieszk", "n_tx"] + v.loc["pl_gosc", "n_tx"]
     if known_pl >= 100:
@@ -161,7 +161,7 @@ def _section_payments(g: str, pay: pd.DataFrame, nat_pay: pd.DataFrame) -> None:
     base = alt.Chart(by_method).encode(y=alt.Y("Sposób płatności:N", sort=order, title=None),
                                        x=alt.X("udzial:Q", axis=alt.Axis(format="%", title=None)))
     st.altair_chart(base.mark_bar(color="#6366f1") + base.mark_text(align="left", dx=4).encode(text="etykieta:N"),
-                    use_container_width=True)
+                    width="stretch")
 
     online_by_visitor = pay.assign(online=(pay["cp"] != 1)).groupby(["visitor", "online"], as_index=False)["n_tx"].sum()
     rows = []
@@ -177,7 +177,7 @@ def _section_payments(g: str, pay: pd.DataFrame, nat_pay: pd.DataFrame) -> None:
                                    x=alt.X("udzial:Q", axis=alt.Axis(format="%", title="Udział płatności online lub zdalnych")))
         st.altair_chart((base.mark_bar().encode(color=alt.Color("Kupujący:N", scale=VIS_SCALE, legend=None))
                          + base.mark_text(align="left", dx=4).encode(text="etykieta:N")).properties(height=110),
-                        use_container_width=True)
+                        width="stretch")
 
 
 def _section_products(g: str, struct: pd.DataFrame, prof: dict) -> None:
@@ -204,7 +204,7 @@ def _section_products(g: str, struct: pd.DataFrame, prof: dict) -> None:
     local["Grupa"] = local["grupa"].map(labeled)
     order = [labeled(x) for x in keep]
     st.caption("Grupy kategorii według liczby transakcji; kolor pokazuje, kto kupował.")
-    st.altair_chart(_stacked_visitor_bar(local, "Grupa", "n_tx", y_sort=order, height=340), use_container_width=True)
+    st.altair_chart(_stacked_visitor_bar(local, "Grupa", "n_tx", y_sort=order, height=340), width="stretch")
 
     spec, gaps = t[t["ocena"] == "specjalizacja"], t[t["ocena"] == "luka"]
     st.markdown("**Mocne strony** (udział ≥ {:.1f}× większy niż w podobnych gminach)".format(SPEC_LQ))
@@ -233,7 +233,7 @@ def _section_time(g: str, months: pd.DataFrame, hours: pd.DataFrame, meta: dict)
         color=alt.Color("Kupujący:N", scale=VIS_SCALE, legend=alt.Legend(orient="bottom", title=None)),
         order=alt.Order("_rank:Q"),
         tooltip=["Miesiąc", "Kupujący", alt.Tooltip("n_tx:Q", format=",.0f", title="Transakcje")],
-    ).properties(height=230), use_container_width=True)
+    ).properties(height=230), width="stretch")
 
     choice = st.radio("Rytm dnia dla:", ["Wszyscy", *[_vis_label(v) for v in ["mieszk", "pl_gosc", "zagr"]]],
                       horizontal=True, key=f"rytm_{g}")
@@ -253,7 +253,7 @@ def _section_time(g: str, months: pd.DataFrame, hours: pd.DataFrame, meta: dict)
         color=alt.Color("udzial:Q", scale=alt.Scale(scheme="purples"), legend=alt.Legend(format="%", title="Udział")),
         tooltip=["Dzień", alt.Tooltip("hr:O", title="Godzina"), alt.Tooltip("udzial:Q", format=".2%", title="Udział"),
                  alt.Tooltip("n_tx:Q", format=",.0f", title="Transakcje")],
-    ).properties(height=220), use_container_width=True)
+    ).properties(height=220), width="stretch")
     if missing > 0.02:
         st.caption(f"Pominięto {pct(missing)} transakcji bez godziny w danych (zapis 000000).")
 
@@ -275,7 +275,7 @@ def _section_guests(g: str, countries: pd.DataFrame, cards: pd.DataFrame, nat_ca
                                        tooltip=["kraj", alt.Tooltip("n_tx:Q", format=",.0f", title="Transakcje"),
                                                 alt.Tooltip("sr_rachunek:Q", format=",.0f", title="Śr. rachunek (fikcyjna waluta)")])
             st.altair_chart(base.mark_bar(color=VISITORS["zagr"]["color"]) + base.mark_text(align="left", dx=4).encode(text="etykieta:N"),
-                            use_container_width=True)
+                            width="stretch")
     with right:
         st.caption("Udział kart premium (Infinite, Platinum, Premier, Signature)")
         def prem_share(df, code):
@@ -294,7 +294,7 @@ def _section_details(g: str, struct: pd.DataFrame, cats: pd.DataFrame, pay: pd.D
             d = cats.copy()
             for col in ["mieszk", "pl_gosc", "zagr", "nieznany"]:
                 d[col] = d[col].fillna(0)
-            st.dataframe(d, hide_index=True, use_container_width=True, column_config={
+            st.dataframe(d, hide_index=True, width="stretch", column_config={
                 "kategoria": "Kategoria", "grupa": "Grupa", "n_tx": "Transakcje",
                 "sr_rachunek": st.column_config.NumberColumn("Śr. rachunek", format="%.0f"),
                 "mieszk": "🏠 Mieszkańcy", "pl_gosc": "🚗 Goście PL", "zagr": "✈️ Zagranica", "nieznany": "❔ Bez danych"})
@@ -304,7 +304,7 @@ def _section_details(g: str, struct: pd.DataFrame, cats: pd.DataFrame, pay: pd.D
                 show = t.assign(udzial=t["udzial"] * 100, udzial_rowiesnicy=t["udzial_rowiesnicy"] * 100,
                                 udzial_polska=t["udzial_polska"] * 100, udzial_gosci=t["udzial_gosci"] * 100)[
                     ["grupa", "n_tx", "udzial", "udzial_rowiesnicy", "udzial_polska", "lq_rowiesnicy", "sr_rachunek", "udzial_gosci", "ocena"]]
-                st.dataframe(show, hide_index=True, use_container_width=True, column_config={
+                st.dataframe(show, hide_index=True, width="stretch", column_config={
                     "grupa": "Grupa", "n_tx": "Transakcje",
                     "udzial": st.column_config.NumberColumn("Udział [%]", format="%.1f"),
                     "udzial_rowiesnicy": st.column_config.NumberColumn("Podobne gminy [%]", format="%.1f"),
@@ -321,7 +321,7 @@ def _section_details(g: str, struct: pd.DataFrame, cats: pd.DataFrame, pay: pd.D
             piv.insert(0, "Sposób płatności", [f"{PAYMENTS[k][0]} {PAYMENTS[k][1]}" for k in piv.index])
             piv["Razem"] = piv[VIS_ORDER].sum(axis=1)
             st.dataframe(piv.sort_values("Razem", ascending=False).rename(columns={k: _vis_label(k) for k in VIS_ORDER}),
-                         hide_index=True, use_container_width=True)
+                         hide_index=True, width="stretch")
         with tab_q:
             st.markdown(
                 f"- **Źródło:** {meta.get('source_kind', '?')} (`{meta.get('source', '?')}`), zbudowano {meta.get('built_at', '?')}\n"

@@ -16,6 +16,26 @@ for _i, _c in enumerate(_PALETTE):
     _COLORSCALE.append([_i / _N, _c])
     _COLORSCALE.append([(_i + 1) / _N, _c])
 
+# Kolory dla dominujących grup kategorii
+_GROUP_COLORS: dict[str, str] = {
+    "Żywność":                "#2ecc71",
+    "Dyskonty i domy towarowe": "#27ae60",
+    "Gastronomia":             "#e67e22",
+    "Zdrowie i apteki":        "#3498db",
+    "Uroda":                   "#e91e63",
+    "Moda i akcesoria":        "#9b59b6",
+    "Dom, ogród i budowa":     "#795548",
+    "Elektronika i media":     "#00bcd4",
+    "Motoryzacja i paliwa":    "#607d8b",
+    "Transport i parkowanie":  "#8bc34a",
+    "Turystyka i nocleg":      "#f39c12",
+    "Rozrywka i sport":        "#ff5722",
+    "Usługi i administracja":  "#673ab7",
+    "Handel internetowy":      "#1abc9c",
+    "Pozostały detal":         "#ff9800",
+    "Inne":                    "#aaaaaa",
+}
+
 
 def load_gminy_data(
     geojson_path: str,
@@ -50,6 +70,7 @@ def build_map(
     zoom: int = 6,
     center_gmina: str | None = None,
     centroids: dict | None = None,
+    dominant: dict[str, dict] | None = None,
 ) -> go.Figure:
     geojson = gminy_geojson
     if geojson is None:
@@ -73,24 +94,66 @@ def build_map(
 
     fig = go.Figure()
 
-    # ── warstwa bazowa: losowe kolory ─────────────────────────────────────────
+    # ── warstwa bazowa: kolory wg dominującej kategorii (lub losowe gdy brak danych) ──
     if unsel_names:
-        z_vals = [hash(g) % _N for g in unsel_names]
-        fig.add_trace(go.Choroplethmap(
-            geojson=unsel_geojson,
-            locations=unsel_names,
-            z=z_vals,
-            featureidkey="properties.Gmina",
-            colorscale=_COLORSCALE,
-            zmin=0,
-            zmax=_N - 1,
-            showscale=False,
-            marker_opacity=0.45,
-            marker_line_width=0.4,
-            marker_line_color="#1e1e2e",
-            hovertemplate="<b>%{location}</b><extra></extra>",
-            name="gminy",
-        ))
+        if dominant:
+            # każda gmina dostaje kolor swojej dominującej grupy
+            groups_ordered = list(_GROUP_COLORS.keys())
+            group_to_idx = {g: i for i, g in enumerate(groups_ordered)}
+            n_groups = len(groups_ordered)
+
+            colorscale_cat = []
+            for i, grp in enumerate(groups_ordered):
+                colorscale_cat.append([i / n_groups, _GROUP_COLORS[grp]])
+                colorscale_cat.append([(i + 1) / n_groups, _GROUP_COLORS[grp]])
+
+            z_vals = [group_to_idx.get(
+                dominant.get(g, {}).get("grupa", "Inne"), group_to_idx["Inne"]
+            ) for g in unsel_names]
+
+            tooltips = []
+            for g in unsel_names:
+                d = dominant.get(g)
+                if d:
+                    tooltips.append(
+                        f"<b>{g}</b><br>🏆 {d['grupa']}<br>{d['pct']}% transakcji<extra></extra>"
+                    )
+                else:
+                    tooltips.append(f"<b>{g}</b><extra></extra>")
+
+            fig.add_trace(go.Choroplethmap(
+                geojson=unsel_geojson,
+                locations=unsel_names,
+                z=z_vals,
+                featureidkey="properties.Gmina",
+                colorscale=colorscale_cat,
+                zmin=0,
+                zmax=n_groups - 1,
+                showscale=False,
+                marker_opacity=0.55,
+                marker_line_width=0.4,
+                marker_line_color="#1e1e2e",
+                customdata=tooltips,
+                hovertemplate="%{customdata}",
+                name="gminy",
+            ))
+        else:
+            z_vals = [hash(g) % _N for g in unsel_names]
+            fig.add_trace(go.Choroplethmap(
+                geojson=unsel_geojson,
+                locations=unsel_names,
+                z=z_vals,
+                featureidkey="properties.Gmina",
+                colorscale=_COLORSCALE,
+                zmin=0,
+                zmax=_N - 1,
+                showscale=False,
+                marker_opacity=0.45,
+                marker_line_width=0.4,
+                marker_line_color="#1e1e2e",
+                hovertemplate="<b>%{location}</b><extra></extra>",
+                name="gminy",
+            ))
 
     # ── warstwa zaznaczonych: fioletowa ──────────────────────────────────────
     if sel_names:

@@ -146,7 +146,7 @@ def get_kanaly(miasto: str) -> pd.DataFrame:
 
 # ── Tematy JSON (dataset/json, patrz build_marts.py; format: {"cols": [...], "data": {gmina: [[...]]}}) ──
 JSON_DIR = Path("dataset/json")
-_TOPICS = ("t_structure", "t_categories", "t_visitors", "t_payments", "t_months", "t_hours", "t_countries", "t_cards")
+_TOPICS = ("t_structure", "t_categories", "t_visitors", "t_payments", "t_months", "t_hours", "t_countries", "t_cards", "t_dominant")
 NATIONAL = "_PL"  # klucz z sumą dla całego kraju
 
 
@@ -219,3 +219,14 @@ def get_countries_total(gmina: str) -> int:
 
 def get_card_types(gmina: str | None) -> pd.DataFrame:
     return _df("t_cards", gmina).rename(columns={"n": "n_tx"})
+
+
+def get_dominant_categories() -> dict[str, dict]:
+    """Dominująca grupa kategorii per gmina — {gmina: {grupa, n, pct, avg_amt}}."""
+    t = _topic("t_dominant")
+    out = {}
+    for gmina, rows in t["data"].items():
+        if rows:
+            cols = t["cols"]
+            out[gmina] = dict(zip(cols, rows[0]))
+    return out
