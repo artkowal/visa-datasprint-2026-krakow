@@ -1,26 +1,25 @@
-import folium
 import json
 import geopandas as gpd
-from folium.plugins import Search
+import plotly.graph_objects as go
 
 _PALETTE = [
     "#e74c3c", "#3498db", "#2ecc71", "#f39c12", "#9b59b6",
     "#1abc9c", "#e67e22", "#e91e63", "#00bcd4", "#8bc34a",
     "#ff5722", "#607d8b", "#795548", "#ff9800", "#673ab7",
 ]
+_SELECTED_COLOR = "#a78bfa"
+_N = len(_PALETTE)
 
-
-def _gmina_color(name: str) -> str:
-    return _PALETTE[hash(name) % len(_PALETTE)]
+# Discrete colorscale: każdy kolor zajmuje równy przedział [i/N, (i+1)/N]
+_COLORSCALE = []
+for _i, _c in enumerate(_PALETTE):
+    _COLORSCALE.append([_i / _N, _c])
+    _COLORSCALE.append([(_i + 1) / _N, _c])
 
 
 def load_gminy_data(
     geojson_path: str,
 ) -> tuple[dict, dict[str, list[str]], dict[str, tuple[float, float]]]:
-    """
-    Wczytuje GeoJSON kodów pocztowych i scala poligony po gminie.
-    Zwraca: (geojson_dict_gminy, {gmina: [kody_pocztowe]}, {gmina: (lat, lon)})
-    """
     gdf = gpd.read_file(geojson_path)
     gdf["geometry"] = gdf["geometry"].make_valid()
 
@@ -32,7 +31,7 @@ def load_gminy_data(
         dissolved["geometry"].notna() &
         dissolved["geometry"].geom_type.isin(["Polygon", "MultiPolygon"])
     ]
-    dissolved["n_kodow"] = dissolved["Gmina"].map(lambda g: len(mapping[g]))
+    dissolved["n_kodow"] = dissolved["Gmina"].map(lambda g: len(mapping.get(g, [])))
 
     centroids: dict[str, tuple[float, float]] = {
         row["Gmina"]: (row.geometry.centroid.y, row.geometry.centroid.x)
@@ -49,82 +48,81 @@ def build_map(
     gminy_geojson: dict | None = None,
     center: tuple[float, float] = (52.0, 19.5),
     zoom: int = 6,
-) -> folium.Map:
-    """
-    Mapa z poligonami gmin.
-    selected — zbiór nazw gmin (uppercase) aktualnie zaznaczonych.
-    Kliknięcie zwraca nazwę gminy przez tooltip.
-    """
-    m = folium.Map(
-        location=list(center),
-        zoom_start=zoom,
-        tiles="OpenStreetMap",
-    )
-
+) -> go.Figure:
     geojson = gminy_geojson
     if geojson is None:
         with open(geojson_path, encoding="utf-8") as f:
             geojson = json.load(f)
 
-    def _style(feature):
-        name = str(feature["properties"].get("Gmina", ""))
-        if name in selected:
-            return {
-                "fillColor": "#a78bfa",
-                "color": "#a78bfa",
-                "weight": 2.5,
-                "fillOpacity": 0.65,
-            }
-        color = _gmina_color(name)
-        return {
-            "fillColor": color,
-            "color": color,
-            "weight": 1.0,
-            "fillOpacity": 0.25,
-        }
+    features = geojson["features"]
+    all_names = [f["properties"]["Gmina"] for f in features]
 
-    def _highlight(feature):
-        return {
-            "fillColor": "#f97316",
-            "color": "#f97316",
-            "weight": 2.5,
-            "fillOpacity": 0.65,
-        }
+    unsel_names = [g for g in all_names if g not in selected]
+    sel_names   = [g for g in all_names if g in selected]
 
-    geojson_layer = folium.GeoJson(
-        geojson,
-        name="gminy",
-        style_function=_style,
-        highlight_function=_highlight,
-        tooltip=folium.GeoJsonTooltip(
-            fields=["Gmina", "n_kodow"],
-            aliases=["Gmina:", "Kodów pocztowych:"],
-            style="background:#1e1e2e;color:#cdd6f4;border:none;font-size:13px",
-        ),
-    ).add_to(m)
+    unsel_geojson = {
+        "type": "FeatureCollection",
+        "features": [f for f in features if f["properties"]["Gmina"] not in selected],
+    }
+    sel_geojson = {
+        "type": "FeatureCollection",
+        "features": [f for f in features if f["properties"]["Gmina"] in selected],
+    }
 
-    Search(
-        layer=geojson_layer,
-        geom_type="Polygon",
-        placeholder="Szukaj gminy…",
-        collapsed=False,
-        search_label="Gmina",
-        zoom=11,
-    ).add_to(m)
+    fig = go.Figure()
 
-    # Informacja na mapie
-    info_html = """
-    <div style="position:fixed;top:12px;right:12px;z-index:1000;
-                background:#1e1e2e;color:#cdd6f4;padding:10px 14px;
-                border-radius:8px;font-size:12px;border:1px solid #a78bfa;
-                max-width:200px">
-        <b style="color:#a78bfa">Jak używać</b><br>
-        Kliknij gminę aby ją zaznaczyć.<br>
-        Możesz wybrać wiele gmin.<br><br>
-        <span style="color:#a78bfa">■</span> zaznaczona<br>
-        <span style="color:#3b82f6">■</span> dostępna
-    </div>
-    """
-    m.get_root().html.add_child(folium.Element(info_html))
+    # ── warstwa bazowa: losowe kolory ─────────────────────────────────────────
+    if unsel_names:
+        z_vals = [hash(g) % _N for g in unsel_names]
+        fig.add_trace(go.Choroplethmap(
+            geojson=unsel_geojson,
+            locations=unsel_names,
+            z=z_vals,
+            featureidkey="properties.Gmina",
+            colorscale=_COLORSCALE,
+            zmin=0,
+            zmax=_N - 1,
+            showscale=False,
+            marker_opacity=0.45,
+            marker_line_width=0.4,
+            marker_line_color="#1e1e2e",
+            hovertemplate="<b>%{location}</b><extra></extra>",
+            name="gminy",
+        ))
 
-    return m
+    # ── warstwa zaznaczonych: fioletowa ──────────────────────────────────────
+    if sel_names:
+        fig.add_trace(go.Choroplethmap(
+            geojson=sel_geojson,
+            locations=sel_names,
+            z=[1] * len(sel_names),
+            featureidkey="properties.Gmina",
+            colorscale=[[0, _SELECTED_COLOR], [1, _SELECTED_COLOR]],
+            zmin=0,
+            zmax=1,
+            showscale=False,
+            marker_opacity=0.75,
+            marker_line_width=2.5,
+            marker_line_color="#ffffff",
+            hovertemplate="<b>%{location}</b> ✓<extra></extra>",
+            name="zaznaczone",
+        ))
+
+    # Plotly zoom ~= folium zoom - 1
+    plotly_zoom = max(3, zoom - 1)
+
+    fig.update_layout(
+        map_style="open-street-map",
+        map_zoom=plotly_zoom,
+        map_center={"lat": center[0], "lon": center[1]},
+        margin={"r": 0, "t": 0, "l": 0, "b": 0},
+        height=520,
+        paper_bgcolor="#1e1e2e",
+        plot_bgcolor="#1e1e2e",
+        hoverlabel=dict(bgcolor="#2a2a3e", font_color="#cdd6f4", font_size=13),
+        showlegend=False,
+        # uirevision = stała wartość → Plotly zachowuje viewport (zoom/center) między rerenderami
+        uirevision="poland_map",
+    )
+
+    return fig

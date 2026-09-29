@@ -1,9 +1,10 @@
 import streamlit as st
-from streamlit_folium import st_folium
 from app.map_builder import build_map, load_gminy_data
-from app.queries import get_stats_gmina
+from app.analytics import run_residents_analysis
+from app.marts import get_gmina, ensure_topic
 
 GEOJSON_PATH = "geojson/postcodes_poland.geojson"
+MAP_HEIGHT = 500
 
 st.set_page_config(
     page_title="Visa City Analytics",
@@ -16,76 +17,218 @@ st.markdown("""
 <style>
     .stApp { background: #1e1e2e; color: #cdd6f4; }
     h1, h2, h3 { color: #a78bfa !important; }
+    div[data-testid="stMetric"] { background: #2a2a3e; border-radius: 8px; padding: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("Visa")
+st.title("Visa — Porównanie gmin")
 
-# ── Dane gmin (dissolve kodów pocztowych) — ładowane raz ─────────────────────
+# ── Dane gmin ─────────────────────────────────────────────────────────────────
 @st.cache_resource(show_spinner="Scalanie kodów pocztowych w gminy…")
 def load_gminy():
     return load_gminy_data(GEOJSON_PATH)
 
 gminy_geojson, gmina_to_postcodes, _ = load_gminy()
 
+# mapowanie kod → gmina (odwrócone)
+code_to_gmina = {code: gmina for gmina, codes in gmina_to_postcodes.items() for code in codes}
+
 # ── Session state ─────────────────────────────────────────────────────────────
 if "selected" not in st.session_state:
     st.session_state["selected"] = set()
+if "map_center" not in st.session_state:
+    st.session_state["map_center"] = [52.0, 19.5]
+if "map_zoom" not in st.session_state:
+    st.session_state["map_zoom"] = 6
+if "_last_click" not in st.session_state:
+    st.session_state["_last_click"] = None
 
 selected: set[str] = st.session_state["selected"]
 
-# ── Mapa ──────────────────────────────────────────────────────────────────────
-m = build_map(GEOJSON_PATH, selected, gminy_geojson=gminy_geojson)
+# ── Mapa w @st.fragment ───────────────────────────────────────────────────────
+@st.fragment
+def map_fragment():
+    sel = st.session_state["selected"]
+    fig = build_map(
+        GEOJSON_PATH, sel,
+        gminy_geojson=gminy_geojson,
+        center=tuple(st.session_state["map_center"]),
+        zoom=st.session_state["map_zoom"],
+    )
+    # on_select="rerun" → Streamlit rerenderuje tylko fragment przy kliknięciu
+    # uirevision w fig → Plotly zachowuje viewport (pan/zoom) między rerenderami
+    event = st.plotly_chart(fig, key="main_map", on_select="rerun", use_container_width=True)
 
-map_data = st_folium(m, width=None, height=580,
-                     returned_objects=["last_object_clicked_tooltip"])
+    pts = (event.selection.points if event and event.selection else [])
+    if pts:
+        gmina = pts[0].get("location", "")
+        if gmina and gmina != st.session_state["_last_click"]:
+            st.session_state["_last_click"] = gmina
+            if gmina in sel:
+                sel.discard(gmina)
+            else:
+                sel.add(gmina)
+            st.session_state["selected"] = sel
+            st.rerun(scope="app")
 
-# Toggle kliknięcia — tooltip format: "Gmina:\n<nazwa>\nKodów pocztowych:\n<n>"
-clicked = map_data.get("last_object_clicked_tooltip")
-if clicked:
-    lines = [l.strip() for l in clicked.strip().splitlines() if l.strip()]
-    gmina = ""
-    for i, line in enumerate(lines):
-        if line.lower().startswith("gmina"):
-            gmina = lines[i + 1] if i + 1 < len(lines) else ""
-            break
-    if gmina:
-        if gmina in selected:
-            selected.discard(gmina)
-        else:
-            selected.add(gmina)
-        st.session_state["selected"] = selected
-        st.rerun()
+map_fragment()
 
-# ── Wyniki ────────────────────────────────────────────────────────────────────
-if not selected:
-    st.info("Kliknij gminę na mapie.", icon="👆")
-else:
+# ── Pasek wybranych + wyczyść ─────────────────────────────────────────────────
+if selected:
     cols_top = st.columns([6, 1])
     with cols_top[0]:
         st.markdown("**Wybrane:** " + " · ".join(f"`{g}`" for g in sorted(selected)))
     with cols_top[1]:
         if st.button("✕ Wyczyść"):
             st.session_state["selected"] = set()
-            st.rerun()
+            st.session_state["_last_click"] = None
+else:
+    st.info("Kliknij gminę na mapie aby ją zaznaczyć. Możesz wybrać kilka do porównania.", icon="👆")
+    st.stop()
 
-    st.markdown("---")
+# ── Wczytaj marty raz przy starcie ────────────────────────────────────────────
+@st.cache_resource(show_spinner="Ładuję dane analityczne…")
+def load_marts():
+    return {
+        topic: ensure_topic(topic)
+        for topic in ["summary", "by_country", "by_month", "by_hour", "by_card", "by_channel"]
+    }
 
-    @st.cache_data(show_spinner=False)
-    def load(codes: tuple[str, ...]) -> dict:
-        return get_stats_gmina(list(codes))
+marts = load_marts()
 
-    cols = st.columns(len(selected))
-    for col, gmina in zip(cols, sorted(selected)):
-        with col:
-            postal_codes = tuple(sorted(gmina_to_postcodes.get(gmina, [])))
-            with st.spinner(f"Ładuję {gmina}…"):
-                d = load(postal_codes)
-            st.markdown(f"### 🏘️ {gmina}")
-            st.caption(f"{len(postal_codes)} kodów pocztowych")
-            st.metric("Wszystkie transakcje",     f"{int(d['n_total']):,}")
-            st.metric("Unikalne karty",           f"{int(d['n_kart_total']):,}")
-            st.markdown("---")
-            st.metric("Turyści (karty spoza PL)", f"{int(d['n_turysci']):,}")
-            st.metric("Unikalne karty turystów",  f"{int(d['n_kart_turysci']):,}")
-            st.metric("Lokalni",                  f"{int(d['n_lokalni']):,}")
+st.markdown("---")
+
+gminy_list = sorted(selected)
+cols = st.columns(len(gminy_list))
+
+for col, gmina in zip(cols, gminy_list):
+    postal_codes = tuple(sorted(gmina_to_postcodes.get(gmina, [])))
+
+    with col:
+        st.markdown(f"## 🏘️ {gmina}")
+        st.caption(f"{len(postal_codes)} kodów pocztowych")
+
+        summary    = marts["summary"].get(gmina, {})
+        countries  = marts["by_country"].get(gmina, [])
+        months     = marts["by_month"].get(gmina, [])
+        hours      = marts["by_hour"].get(gmina, [])
+        cards      = marts["by_card"].get(gmina, [])
+        channels   = marts["by_channel"].get(gmina, [])
+
+        if not summary:
+            st.warning("Brak danych dla tej gminy.")
+            continue
+
+        # ── A. Turyści ────────────────────────────────────────────────────────
+        st.markdown("### 🌍 Turyści")
+        m1, m2 = st.columns(2)
+        m1.metric("Transakcje", f"{summary['n_total']:,}")
+        m2.metric("Turyści zagr.", f"{summary['n_foreign']:,}", f"{summary['pct_foreign']}%")
+
+        if countries:
+            import pandas as pd
+            st.markdown("**Top kraje gości:**")
+            df = pd.DataFrame(countries)[["country", "n", "pct"]]
+            df.columns = ["Kraj", "Transakcje", "%"]
+            st.dataframe(df, hide_index=True, width='stretch')
+
+        if months:
+            import pandas as pd
+            st.markdown("**Goście per miesiąc:**")
+            df = pd.DataFrame(months).set_index("month")[["n_foreign"]]
+            df.columns = ["Turyści"]
+            st.bar_chart(df, width='stretch')
+
+        if cards:
+            import pandas as pd
+            st.markdown("**Typ karty gości:**")
+            df = pd.DataFrame(cards)[["type", "n", "pct"]]
+            df.columns = ["Karta", "Transakcje", "%"]
+            st.dataframe(df, hide_index=True, width='stretch')
+
+        # ── C. Czas ───────────────────────────────────────────────────────────
+        st.markdown("### 🕐 Rytm dnia")
+
+        if months:
+            import pandas as pd
+            st.markdown("**Trend miesięczny:**")
+            df = pd.DataFrame(months).set_index("month")[["n", "pct_foreign"]]
+            df.columns = ["Transakcje", "% zagranicznych"]
+            st.line_chart(df, width='stretch')
+
+        if hours:
+            import pandas as pd
+            st.markdown("**% turystów per godzina:**")
+            df = pd.DataFrame(hours).set_index("hour")[["pct_foreign"]]
+            df.columns = ["% zagranicznych"]
+            st.area_chart(df, width='stretch')
+
+        # ── D. Wartość i płatności ────────────────────────────────────────────
+        st.markdown("### 💳 Płatności")
+
+        if channels:
+            import pandas as pd
+            st.markdown("**Kanały płatności:**")
+            df = pd.DataFrame(channels)[["channel", "n", "pct"]].head(6)
+            df.columns = ["Kanał", "Transakcje", "%"]
+            st.dataframe(df, hide_index=True, width='stretch')
+
+        # ── B + E — mieszkańcy (wolne, na żądanie) ────────────────────────────
+        st.markdown("### 🏠 Mieszkańcy i powiązania")
+
+        btn_key = f"btn_residents_{gmina}"
+        res_key = f"residents_{gmina}"
+
+        if res_key not in st.session_state:
+            if st.button("Analizuj mieszkańców", key=btn_key):
+                with st.spinner("Liczę card_home i przepływy… (może zająć chwilę)"):
+                    st.session_state[res_key] = run_residents_analysis(
+                        list(postal_codes), code_to_gmina
+                    )
+                st.rerun()
+
+        if res_key in st.session_state:
+            r = st.session_state[res_key]
+
+            st.caption(f"Karty z przypisanym domem w gminie: {r.get('n_resident_cards', 0):,}")
+
+            # E — wskaźniki syntetyczne
+            st.markdown("#### 📊 Wskaźniki syntetyczne")
+            e1, e2, e3 = st.columns(3)
+            e1.metric("Samowystarczalność",
+                      f"{r.get('E1_self_sufficiency', 0):.1f}%",
+                      help="% zakupów codziennych robionych lokalnie")
+            e2.metric("Atrakcyjność",
+                      f"{r.get('E2_attractiveness', 0):.1f}%",
+                      help="napływ / (napływ + odpływ)")
+            e3.metric("Zależność od gości",
+                      f"{r.get('E3_tourism_dependency', 0):.1f}%",
+                      help="% transakcji w obszarze od osób spoza gminy")
+
+            # E5 — siła powiązania
+            if "E5_connections" in r:
+                st.markdown("#### 🔗 Powiązania z innymi gminami")
+                conn = r["E5_connections"][["gmina", "kierunek", "n_out", "n_in", "flow_total"]]
+                conn.columns = ["Gmina", "↔", "Odpływ →", "Napływ ←", "Łącznie"]
+                st.dataframe(conn, hide_index=True, width='stretch')
+
+            # B2 — odpływ
+            if "B2_outflow" in r and len(r["B2_outflow"]):
+                st.markdown("#### 🚗 Dokąd wyjeżdżają mieszkańcy")
+                df = r["B2_outflow"][["area_gmina", "n"]].rename(
+                    columns={"area_gmina": "Gmina", "n": "Transakcje"})
+                st.bar_chart(df.set_index("Gmina"), width='stretch')
+
+            # B3 — napływ
+            if "B3_inflow" in r and len(r["B3_inflow"]):
+                st.markdown("#### 🏙️ Skąd przyjeżdżają do gminy")
+                df = r["B3_inflow"][["home_gmina", "n"]].rename(
+                    columns={"home_gmina": "Gmina", "n": "Transakcje"})
+                st.bar_chart(df.set_index("Gmina"), width='stretch')
+
+            # B4 — odpływ wg kategorii
+            if "B4_outflow_cat" in r and len(r["B4_outflow_cat"]):
+                st.markdown("#### 🛒 Czego szukają poza gminą (top kategorie)")
+                df = r["B4_outflow_cat"].rename(
+                    columns={"mrch_catg_nm": "Kategoria", "n": "Transakcje"})
+                st.dataframe(df, hide_index=True, width='stretch')
