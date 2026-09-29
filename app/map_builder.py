@@ -1,6 +1,8 @@
 import json
+
 import geopandas as gpd
 import plotly.graph_objects as go
+from shapely.geometry import MultiPolygon, Polygon
 
 _PALETTE = [
     "#e74c3c", "#3498db", "#2ecc71", "#f39c12", "#9b59b6",
@@ -9,6 +11,22 @@ _PALETTE = [
 ]
 _SELECTED_COLOR = "#a78bfa"
 _N = len(_PALETTE)
+
+_PL_PROJECTED_CRS = "EPSG:2180"
+_GAP_CLOSE_METERS = 30  # smallest distance that fully closes gmina boundaries into one polygon
+
+_MIN_HOLE_AREA_M2 = 500_000  # 0.5 km^2
+
+
+def _fill_small_holes(geom, min_hole_area: float):
+    if geom is None or geom.is_empty:
+        return geom
+    if geom.geom_type == "Polygon":
+        kept = [ring for ring in geom.interiors if Polygon(ring).area >= min_hole_area]
+        return Polygon(geom.exterior, kept)
+    if geom.geom_type == "MultiPolygon":
+        return MultiPolygon([_fill_small_holes(p, min_hole_area) for p in geom.geoms])
+    return geom
 
 # Discrete colorscale: każdy kolor zajmuje równy przedział [i/N, (i+1)/N]
 _COLORSCALE = []
@@ -26,6 +44,10 @@ def load_gminy_data(
     mapping: dict[str, list[str]] = gdf.groupby("Gmina")["Name"].apply(list).to_dict()
 
     dissolved = gdf.dissolve(by="Gmina").reset_index()[["Gmina", "geometry"]]
+    dissolved = dissolved.set_crs(gdf.crs).to_crs(_PL_PROJECTED_CRS)
+    dissolved["geometry"] = dissolved["geometry"].buffer(_GAP_CLOSE_METERS).buffer(-_GAP_CLOSE_METERS)
+    dissolved["geometry"] = dissolved["geometry"].apply(lambda g: _fill_small_holes(g, _MIN_HOLE_AREA_M2))
+    dissolved = dissolved.to_crs(gdf.crs)
     dissolved["geometry"] = dissolved["geometry"].make_valid()
     dissolved = dissolved[
         dissolved["geometry"].notna() &
