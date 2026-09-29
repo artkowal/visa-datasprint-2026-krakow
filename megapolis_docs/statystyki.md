@@ -111,7 +111,7 @@ Test 5 (próbka wierszy kart zagranicznych) zwrócił pusty wynik – `USING SAM
 
 ### Ograniczenia i co jeszcze niesprawdzone
 - Słownik nie opisuje okna czasowego ani częstotliwości przeliczania przypisania `*_enr` ani powodu pustych okien – to pytanie do organizatorów DataSprint.
-- Test na 1% kart z sample; nie sprawdzano, czy wynik jest taki sam na full.
+- Testy robione na 1% kart z sample. **Sample = losowe 20% kart z pełną historią** (dla tego 1% kart: 19 423 karty w sample, 97 343 w full; wszystkie karty ze sample mają w full identyczną liczbę transakcji i te same daty; skala ≈ ×4,96), więc wskaźniki na kartę są nieobciążone, a liczby bezwzględne trzeba skalować. Plan: `megapolis_docs/plan.md`.
 - Do sprawdzenia: czy zmienność kodu zależy od miesiąca/okresu wzbogacenia (np. skoki na granicach kwartałów), oraz jakie okno (miesiąc, kwartał) daje najlepszy kompromis stabilność–pokrycie.
 - Znaczenie `issr_jurn` potwierdzone słownikiem (Domestic/Intra/Inter jak wyżej).
 
