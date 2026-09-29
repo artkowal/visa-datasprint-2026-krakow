@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import streamlit as st
 from app.map_builder import build_map, load_gminy_data
 from app.analytics import run_residents_analysis
@@ -8,8 +10,8 @@ GEOJSON_PATH = "geojson/postcodes_poland.geojson"
 MAP_HEIGHT = 500
 
 st.set_page_config(
-    page_title="Visa City Analytics",
-    page_icon="",
+    page_title="Megapolis VISA",
+    page_icon="🗺️",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -24,7 +26,17 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("Visa — Porównanie gmin")
+logo_col, note_col = st.columns([3, 2], gap="large", vertical_alignment="center")
+with logo_col:
+    st.image(str(Path(__file__).resolve().parent / "assets" / "megapolis-visa.svg"), use_container_width=True)
+with note_col:
+    st.markdown(
+        '<div style="padding:16px 20px;border-left:3px solid #f7bb42;'
+        'border-radius:8px;background:#282c44;color:#cdd6f4;line-height:1.45">'
+        'Zobacz, gdzie gminy współpracują i jakie funkcje mogą rozwijać razem.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
 # ── Dane gmin ─────────────────────────────────────────────────────────────────
 @st.cache_resource(show_spinner="Scalanie kodów pocztowych w gminy…")
