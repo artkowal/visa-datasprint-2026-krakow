@@ -219,6 +219,10 @@ def render_matching(mode: str) -> None:
     if "matching_last_map_click" not in st.session_state:
         st.session_state["matching_last_map_click"] = None
 
+    # Zastosuj kliknięcie z mapy przed wyrenderowaniem widżetu
+    if "_pending_anchor" in st.session_state:
+        st.session_state["matching_anchor"] = st.session_state.pop("_pending_anchor")
+
     ctrl_a, ctrl_b = st.columns([3, 1])
     with ctrl_a:
         anchor = st.selectbox("Gmina bazowa", names, key="matching_anchor")
@@ -258,7 +262,7 @@ def render_matching(mode: str) -> None:
             if clicked and clicked != st.session_state["matching_last_map_click"]:
                 st.session_state["matching_last_map_click"] = clicked
                 if clicked != anchor:
-                    st.session_state["matching_anchor"] = clicked
+                    st.session_state["_pending_anchor"] = clicked
                     st.rerun()
 
     with profile_col:
