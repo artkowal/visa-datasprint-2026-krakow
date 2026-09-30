@@ -1,6 +1,5 @@
 # Megapolis VISA – dokumentacja techniczna
 
-
 ## 1. Cel i zakres
 
 Aplikacja pokazuje na mapie Polski gminy i pozwala:
@@ -12,7 +11,6 @@ Aplikacja pokazuje na mapie Polski gminy i pozwala:
 3. **znaleźć gminy do współpracy** w dwóch trybach: *Wzmocnienie* (podobne mocne kategorie) i *Uzupełnienie* (kategorie wzajemnie wypełniające luki).
 
 Dane wejściowe to transakcje Visa (próbka 20% kart z pełną historią) oraz GeoJSON kodów pocztowych z przypisaniem do gmin. **Kwoty są w walucie fikcyjnej** – wolno używać tylko porównań względnych.
-
 
 ## 2. Struktura projektu
 
@@ -46,7 +44,6 @@ dataset/
 
 `streamlit` (używane: `st.fragment`, `st.rerun(scope=…)`, `width="stretch"`), `plotly` ≥ 5.24 (trace'y `Choroplethmap`, `Scattermap`), `altair`, `pandas`, `numpy`, `polars`, `duckdb`, `geopandas`, `shapely`, `matplotlib` (tylko `charts.py`), opcjonalnie `orjson`.
 
-
 ## 3. Dane wejściowe
 
 ### 3.1 Surowy parquet (`dataset/datasprint_sample_data.parquet`)
@@ -73,7 +70,6 @@ Kolumny używane przez skrypty:
 ### 3.2 GeoJSON (`geojson/postcodes_poland.geojson`)
 
 Wielokąty kodów pocztowych z właściwościami `Name` (kod `NN-NNN`) i `Gmina` (nazwa gminy; klucze w aplikacji to nazwy wielkimi literami, np. `KRAKOW`). Nie ma TERYT ani powiatu, więc **nazwa gminy jest kluczem** (homonimy się zlewają).
-
 
 ## 4. Potok danych
 
@@ -121,10 +117,6 @@ python build_marts.py --export-only                          # tylko JSON z istn
 
 
 **Czas polski:** godzina = (godzina GMT + 1 lub 2) mod 24, przy czym +2 obowiązuje między 2025-03-30 a 2025-10-25 oraz od 2026-03-29 (przybliżenie czasu letniego; w dniach przejścia możliwe drobne odchylenia). Dzień tygodnia (`dow`, 0 = niedziela) uwzględnia przejście przez północ. Zapis `000000` oznacza brak czasu i daje `hr = -1`, `dow = -1`.
-
-
-
-
 
 **Tabele pośrednie** (`dataset/marts/`):
 
@@ -208,7 +200,6 @@ Czytany przez `matching_real.py`, `matching_view.py` i ekran główny. Format:
 
 Klucze to gminy, wartości to **udziały** grup kategorii (nazwy z `categories.GROUP_ORDER`, bez „Handel internetowy” i „Inne”; suma ≈ 1). **Żaden z przesłanych skryptów nie generuje tego pliku** – trzeba go wytworzyć osobno (naturalne źródło: `t_structure.json`, udział lokalnych grup w transakcjach gminy). Gdy pliku brakuje, `matching_real` używa `t_dominant.json` (profil 0/1 dla dominującej grupy), a `matching_view` pokazuje ostrzeżenie o danych demonstracyjnych.
 
-
 ## 5. Aplikacja Streamlit
 
 ### 5.1 `streamlit_app.py` (ekran główny)
@@ -234,7 +225,6 @@ Przebieg:
 ### 5.2 `../pages/2_Dopasowania Gmin.py`
 
 Osobna strona: wybór trybu (*Wzmocnienie* / *Uzupełnienie*) i wywołanie `render_matching(mode)`.
-
 
 ### 5.3 `app/map_builder.py`
 
@@ -348,7 +338,6 @@ Kategorie profilu: `GROUP_ORDER` bez „Handel internetowy” i „Inne”. W wi
 
 `charts.py` renderuje wykresy matplotlib jako obrazy base64 (kategorie, kraje, trend, kanały) – starsza warstwa, nieużywana przez opisane widoki.
 
-
 ## 6. Wskaźniki – zestawienie definicji
 
 | Wskaźnik | Definicja | Źródło |
@@ -361,7 +350,6 @@ Kategorie profilu: `GROUP_ORDER` bez „Handel internetowy” i „Inne”. W wi
 | Specjalizacja / luka | LQ względem 50 podobnych gmin | `trade.py` |
 | Różnorodność | znormalizowana entropia grup kategorii | `trade.py` |
 | Wynik dopasowania | 0,8 · profil + 0,2 · bliskość, skala 0–100 | `matching_real.py` |
-
 
 
 ## 7. Zasady interpretacji i ograniczenia
@@ -380,7 +368,6 @@ Kategorie profilu: `GROUP_ORDER` bez „Handel internetowy” i „Inne”. W wi
 
 - **Korelacja, nie skutek:** wskaźniki pokazują istniejące zachowania, nie przewidują efektu połączenia gmin.
 
-
 ## 8. Jak rozszerzać
 
 **Nowy temat w `app/marts.py`:** napisz `_build_<temat>(gmina_to_codes) -> dict` i dopisz do słownika `TOPICS`; plik `dataset/json/<temat>.json` powstanie przy pierwszym `ensure_topic`.
@@ -391,27 +378,7 @@ Kategorie profilu: `GROUP_ORDER` bez „Handel internetowy” i „Inne”. W wi
 
 **Zmiana progów oceny handlu:** stałe na górze `trade.py` (patrz 5.6). Wagi rankingu dopasowań są zapisane wprost w `matching_real.rank_matches` (0,8 / 0,2).
 
-
-## 9. Znane niespójności i zalecenia
-
-Poniższe punkty wynikają z lektury kodu; warto je rozstrzygnąć przed pokazaniem liczb z obu źródeł obok siebie.
-
-| \# | Obserwacja | Skutek / zalecenie |
-| - | - | - |
-| 1 | **Dwa potoki liczą podobne rzeczy inaczej.** `build_marts.py`: tylko karty `CN`, bez ATM/gotówki, gmina = największa powierzchnia kodu, czas z uwzględnieniem DST, kupujący z `lau_enr`. `app/marts.py`: bez filtra segmentu (poza `residents`), odrzuca `000000`, mapowanie `dict(zip(Name, Gmina))` (ostatni wygrywa), godzina = GMT + 1 stałe. | Liczby z `summary`/`by_hour` nie zgadzają się z `t_*`. Zalecane: jeden potok i jedna funkcja mapowania kod → gmina. |
-| 2 | `_build_summary` bierze `amt_median` z pierwszego kodu gminy (`rows[0]`), a `n_cards` sumuje karty unikalne per kod. | Mediana nie jest medianą gminy; liczba kart bywa zawyżona. |
-| 3 | `by_category.json` nie jest generowany przez żaden przesłany skrypt. | Bez niego dopasowania używają fallbacku (`t_dominant` lub demo). Dodaj generator (np. z `t_structure`). |
-| 4 | Trzy różne definicje „domu karty”: `analytics._get_b` (≥ 10 zakupów codziennych i ≥ 50% w jednym kodzie), `analytics.run_residents_analysis` i `marts._build_residents` (modalny `pstl_cd_enr` ≥ 50%), `build_marts.py` (`lau_enr` = gmina sprzedawcy). | Wskaźniki mieszkańców z różnych modułów nie są porównywalne. |
-| 5 | `marts.py` liczy godzinę jako GMT + 1 zawsze; `build_marts.py` dodaje 2 h w czasie letnim. | Różnica jednej godziny latem między widokami. |
-| 6 | `queries.py` zawiera zapytania z SQL składanym f-stringiem po nazwie miasta i po `pstl_cd_enr`. | Ryzyko błędów i wstrzyknięcia SQL; `get_stats_gmina` filtruje po kodzie kupującego (plan §14 zaleca `mrch_postal_code`). Usuń lub sparametryzuj. |
-| 7 | `map_builder.build_map` bez danych dominujących koloruje gminy przez `hash(g) % N`. | `hash()` w Pythonie nie jest stabilny między uruchomieniami; kolory się zmieniają. |
-| 8 | `streamlit_app.py` importuje `run_residents_analysis`, ale go nie używa; `charts.py` nie jest używany; docstring `2_Dopasowania_Gmin.py` mówi, że tryby są też na ekranie głównym, a `streamlit_app.py` ich nie renderuje. | Sprzątanie lub dopięcie funkcji. |
-| 9 | `build_marts.py` wymaga kolumn `mrch_ctry_nm` i `transaction_type`, których nie używają pozostałe moduły (te filtrują po `mrch_ctry_cd`). | Sprawdź obecność kolumn w pełnym zbiorze. |
-| 10 | `streamlit_app.load_marts()` wywołuje `ensure_topic("t_dominant")`, ale `t_dominant` nie jest w `marts.TOPICS`. | Działa tylko, gdy wcześniej uruchomiono `build_marts.py` (plik istnieje); inaczej `ValueError`. |
-
-
-
-## 10. Szybki start
+## 9. Szybki start
 
 ```
 # 1. dane: dataset/datasprint_sample_data.parquet, geojson/postcodes_poland.geojson, assets/megapolis-visa.svg
