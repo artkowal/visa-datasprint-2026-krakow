@@ -398,8 +398,17 @@ st.markdown("### 💳 Płatności")
 for col, gmina in zip(st.columns(len(gminy_list)), gminy_list):
     with col:
         if _city[gmina]["channels"]:
+            _CHANNEL_PL = {
+                "mobile":             "Mobilna",
+                "cp_contactless":     "Karta zbliżeniowa",
+                "cp_non_contactless": "Karta stykowa",
+                "eci":                "Internet",
+                "cash":               "Gotówka",
+                "other":              "Inne",
+            }
             st.markdown("**Kanały płatności:**")
             df = pd.DataFrame(_city[gmina]["channels"])[["channel", "n", "pct"]].head(6)
+            df["channel"] = df["channel"].map(lambda x: _CHANNEL_PL.get(x, x))
             df.columns = ["Kanał", "Transakcje", "%"]
             st.dataframe(df, hide_index=True, width='stretch')
         else:
