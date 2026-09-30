@@ -94,24 +94,62 @@ def _profile_fig(
         y=labels,
         orientation="h",
         marker_color=colors,
+        marker_line=dict(
+            color=["#2dd4bf" if c == "#2dd4bf" else "rgba(0,0,0,0)" for c in colors],
+            width=2,
+        ),
         text=text,
         textposition="outside",
         cliponaxis=False,
         hovertemplate="%{y}: %{x:.1f}%<extra></extra>",
+        name="Dopasowanie",
     ))
+
+    # warstwa referencyjna — wartości kotwicy jako złote markery
+    if anchor is not None:
+        anchor_vals = [anchor.get(c, 0) * 100 for c, _ in sorted_cats]
+        shared_cats = {c for c, v in sorted_cats if anchor.get(c, 0) >= 0.08 and v >= 0.08} if mode == "Wzmocnienie" else set()
+        fig.add_trace(go.Scatter(
+            x=anchor_vals,
+            y=labels,
+            mode="markers",
+            marker=dict(
+                symbol="line-ns-open",
+                size=14,
+                color="#f7bb42",
+                line=dict(width=2.5, color="#f7bb42"),
+            ),
+            name="Kotwica",
+            hovertemplate="%{y} (kotwica): %{x:.1f}%<extra></extra>",
+        ))
+
     max_val = max(vals) if vals else 1
+    if anchor is not None:
+        anchor_max = max((anchor.get(c, 0) * 100 for c, _ in sorted_cats), default=0)
+        max_val = max(max_val, anchor_max)
+
+    # tytuł z wspólnymi mocnymi kategoriami (tylko Wzmocnienie)
+    shared_label = ""
+    if anchor is not None and mode == "Wzmocnienie":
+        shared = [f"{GROUP_ICONS.get(c,'')} {c}" for c, v in sorted_cats if anchor.get(c, 0) >= 0.08 and v >= 0.08]
+        if shared:
+            shared_label = "🤝 " + " · ".join(shared)
+
     fig.update_layout(
         height=max(180, len(names) * height_per_row),
-        margin={"l": 0, "r": 50, "t": 4, "b": 4},
+        margin={"l": 0, "r": 50, "t": 28 if shared_label else 4, "b": 4},
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#cdd6f4", "size": 11},
+        title=dict(text=shared_label, font=dict(size=11, color="#2dd4bf"), x=0, xanchor="left") if shared_label else {},
         xaxis=dict(
             showgrid=False, zeroline=False, visible=False,
             range=[0, max_val * 1.35],
         ),
         yaxis=dict(showgrid=False, zeroline=False, tickfont={"size": 11}),
-        showlegend=False,
+        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1,
+                    font=dict(size=10)) if anchor is not None else {},
+        showlegend=anchor is not None,
     )
     return fig
 
@@ -191,6 +229,7 @@ def render_matching(mode: str) -> None:
             key="matching_map_chart",
             on_select="rerun",
             width="stretch",
+            height=600,
         )
         points = event.selection.points if event and event.selection else []
         if points:
@@ -252,6 +291,29 @@ def render_matching(mode: str) -> None:
                             )
                         else:
                             st.caption("Brak danych profilu.")
+
+    # wyrównaj wysokości kart — components.html gwarantuje wykonanie JS
+    import streamlit.components.v1 as components
+    components.html("""
+    <script>
+    const run = () => {
+        const doc = window.parent.document;
+        const rows = doc.querySelectorAll('[data-testid="stHorizontalBlock"]');
+        rows.forEach(row => {
+            const cols = [...row.querySelectorAll('[data-testid="column"]')];
+            if (cols.length < 2) return;
+            cols.forEach(c => c.style.height = 'auto');
+            const maxH = Math.max(...cols.map(c => c.getBoundingClientRect().height));
+            cols.forEach(c => {
+                c.style.height = maxH + 'px';
+                const card = c.querySelector('[data-testid="stVerticalBlockBorderWrapper"]');
+                if (card) card.style.height = '100%';
+            });
+        });
+    };
+    [200, 600, 1200].forEach(t => setTimeout(run, t));
+    </script>
+    """, height=0)
 
     if not is_real:
         st.warning(

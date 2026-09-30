@@ -81,7 +81,7 @@ def build_matching_map(
         map_style="open-street-map",
         map_zoom=9 if radius_km <= 30 else 8 if radius_km <= 80 else 7 if radius_km <= 150 else 6,
         map_center={"lat": center[0], "lon": center[1]},
-        height=630,
+        height=600,
         margin={"r": 0, "t": 0, "l": 0, "b": 0},
         paper_bgcolor="#1e1e2e",
         hoverlabel=dict(bgcolor="#2a2a3e", font_color="#cdd6f4", font_size=13),
