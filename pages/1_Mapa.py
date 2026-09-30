@@ -318,6 +318,29 @@ def _fmt_month(m) -> str:
     s = str(int(m))
     return f"{s[:4]}-{s[4:]}"
 
+
+def _html_table(df, num_cols: list[str]) -> str:
+    """Renderuje DataFrame jako HTML: lewa kolumna do lewej, num_cols do prawej (label + wartość razem)."""
+    th_style_left = "text-align:left;padding:5px 10px;border-bottom:1px solid #3a3a5c;color:#a0a0c0;font-weight:600"
+    th_style_right = "text-align:right;padding:5px 10px;border-bottom:1px solid #3a3a5c;color:#a0a0c0;font-weight:600"
+    td_style_left = "padding:4px 10px;border-bottom:1px solid #2a2a3e"
+    td_style_right = "text-align:right;padding:4px 10px;border-bottom:1px solid #2a2a3e"
+
+    headers = "".join(
+        f"<th style='{th_style_right}'>{c}</th>" if c in num_cols
+        else f"<th style='{th_style_left}'>{c}</th>"
+        for c in df.columns
+    )
+    rows = ""
+    for _, row in df.iterrows():
+        cells = "".join(
+            f"<td style='{td_style_right}'>{row[c]}</td>" if c in num_cols
+            else f"<td style='{td_style_left}'>{row[c]}</td>"
+            for c in df.columns
+        )
+        rows += f"<tr>{cells}</tr>"
+    return f"<table style='width:100%;border-collapse:collapse;font-size:14px'><thead><tr>{headers}</tr></thead><tbody>{rows}</tbody></table>"
+
 def _delta(current, ref, key, pct=False, inverse=False):
     if not ref or current is ref_summary:
         return "—", "off"
@@ -365,7 +388,7 @@ for col, gmina in zip(st.columns(len(gminy_list)), gminy_list):
             st.markdown("**Top kraje gości:**")
             df = pd.DataFrame(_city[gmina]["countries"])[["country", "n", "pct"]]
             df.columns = ["Kraj", "Transakcje", "%"]
-            st.dataframe(df, hide_index=True, width='stretch')
+            st.markdown(_html_table(df, ["Transakcje", "%"]), unsafe_allow_html=True)
 
         if _city[gmina]["months"]:
             st.markdown("**Goście per miesiąc:**")
@@ -378,7 +401,7 @@ for col, gmina in zip(st.columns(len(gminy_list)), gminy_list):
             st.markdown("**Typ karty gości:**")
             df = pd.DataFrame(_city[gmina]["cards"])[["type", "n", "pct"]]
             df.columns = ["Karta", "Transakcje", "%"]
-            st.dataframe(df, hide_index=True, width='stretch')
+            st.markdown(_html_table(df, ["Transakcje", "%"]), unsafe_allow_html=True)
 
 # ── Sekcja B: Sezonowość i rytm dnia ─────────────────────────────────────────
 st.markdown("---")
@@ -416,7 +439,7 @@ for col, gmina in zip(st.columns(len(gminy_list)), gminy_list):
             df = pd.DataFrame(_city[gmina]["channels"])[["channel", "n", "pct"]].head(6)
             df["channel"] = df["channel"].map(lambda x: _CHANNEL_PL.get(x, x))
             df.columns = ["Kanał", "Transakcje", "%"]
-            st.dataframe(df, hide_index=True, width='stretch')
+            st.markdown(_html_table(df, ["Transakcje", "%"]), unsafe_allow_html=True)
         else:
             st.caption("Brak danych o kanałach płatności.")
 
@@ -442,10 +465,9 @@ for col, gmina in zip(st.columns(len(gminy_list)), gminy_list):
 
         if r.get("E5_connections"):
             st.markdown("#### 🔗 Powiązania z innymi gminami")
-            st.dataframe(
-                pd.DataFrame(r["E5_connections"])
-                  .rename(columns={"gmina":"Gmina","kierunek":"↔","n_out":"Odpływ →","n_in":"Napływ ←","flow_total":"Łącznie"}),
-                hide_index=True, width='stretch')
+            df_conn = pd.DataFrame(r["E5_connections"]).rename(
+                columns={"gmina":"Gmina","kierunek":"↔","n_out":"Odpływ →","n_in":"Napływ ←","flow_total":"Łącznie"})
+            st.markdown(_html_table(df_conn, ["Odpływ →","Napływ ←","Łącznie"]), unsafe_allow_html=True)
 
         if r.get("B2_outflow"):
             st.markdown("#### 🚗 Dokąd wyjeżdżają mieszkańcy")
@@ -463,4 +485,4 @@ for col, gmina in zip(st.columns(len(gminy_list)), gminy_list):
             total = df["n"].sum()
             df["%"] = (df["n"] / total * 100).round(1).astype(str) + "%"
             df = df.rename(columns={"mrch_catg_nm": "Kategoria", "n": "Transakcje"})
-            st.dataframe(df[["Kategoria", "Transakcje", "%"]], hide_index=True, width='stretch')
+            st.markdown(_html_table(df[["Kategoria", "Transakcje", "%"]], ["Transakcje", "%"]), unsafe_allow_html=True)
