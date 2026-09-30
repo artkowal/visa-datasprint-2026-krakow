@@ -252,7 +252,7 @@ Punkt wejścia: `render_gmina(g, trade_ref, meta)`. Kolejność sekcji:
 
 6. **Skąd są goście?** – kraje wydania kart, udział kart premium.
 
-7. **Szczegóły** – tabele kategorii, grup vs podobne gminy, płatności oraz zakładka „Jakość danych” z metadanymi budowy.
+7. **Szczegóły – tabele kategorii, grup vs podobne gminy, płatności oraz zakładka „Jakość danych” z metadanymi budowy.**
 
 Bramki jakości: brak danych → informacja; poniżej `MIN_TX` (1000) transakcji → ostrzeżenie i brak wskaźników.
 
@@ -343,7 +343,7 @@ Kategorie profilu: `GROUP_ORDER` bez „Handel internetowy” i „Inne”. W wi
 | Wskaźnik | Definicja | Źródło |
 | - | - | - |
 | Samowystarczalność | % zakupów codziennych mieszkańców zrobionych w gminie domowej | `marts.py` (`B1`/`E1`) |
-| Atrakcyjność | napływ / (napływ + odpływ) | `marts.py` (`E2`) |
+| Atrakcyjność | Napływ / Odpływ | `marts.py` (`E2`) |
 | Zależność od gości | % transakcji w gminie od kart z domem poza gminą | `marts.py` (`E3`) |
 | % zagranicznych | transakcje kartami z `issr_jurn ≠ Domestic` / wszystkie | `marts.py` (`summary`) |
 | Mieszkaniec / gość PL / gość zagr. | patrz tabela w 4.1 | `build_marts.py` |
