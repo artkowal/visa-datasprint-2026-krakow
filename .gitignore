@@ -220,6 +220,7 @@ __marimo__/
 # Large datasets / Data files
 dataset/*
 !dataset/.gitkeep
+!dataset/json
 *.parquet
 *.csv
 *.zip
