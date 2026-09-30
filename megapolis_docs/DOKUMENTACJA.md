@@ -42,7 +42,16 @@ dataset/
 
 ### Zależności
 
-`streamlit` (używane: `st.fragment`, `st.rerun(scope=…)`, `width="stretch"`), `plotly` ≥ 5.24 (trace'y `Choroplethmap`, `Scattermap`), `altair`, `pandas`, `numpy`, `polars`, `duckdb`, `geopandas`, `shapely`, `matplotlib` (tylko `charts.py`), opcjonalnie `orjson`.
+- `streamlit`
+- `plotly`
+- `altair` 
+- `pandas` 
+- `numpy`
+- `polars`
+- `duckdb`
+- `geopandas`
+- `shapely`
+- `matplotlib`
 
 ## 3. Dane wejściowe
 
@@ -65,11 +74,9 @@ Kolumny używane przez skrypty:
 | `cs_tran_amt` | kwota (waluta fikcyjna) |
 
 
-**Okna bez danych `_enr`:** kolumny `pstl_cd_enr`/`lau_enr` są puste od 2026-02-28 do 2026-03-30 i od 2026-04-30 do 2026-06-30. Kod używa tych dat w `marts.py` i `analytics.py`.
+### 3.2 GeoJSON kodów pocztowych i gmin
 
-### 3.2 GeoJSON (`geojson/postcodes_poland.geojson`)
-
-Wielokąty kodów pocztowych z właściwościami `Name` (kod `NN-NNN`) i `Gmina` (nazwa gminy; klucze w aplikacji to nazwy wielkimi literami, np. `KRAKOW`). Nie ma TERYT ani powiatu, więc **nazwa gminy jest kluczem** (homonimy się zlewają).
+Plik `geojson/postcodes_poland.geojson` zawiera wielokąty kodów pocztowych z przypisaniem do gmin — każda cecha ma właściwości `Name` (kod w formacie `NN-NNN`) i `Gmina` (nazwa gminy wielkimi literami, np. `KRAKOW`). Na jego podstawie aplikacja scala kody w gminy, zamyka szczeliny między sąsiednimi kodami i upraszcza geometrię, a wynik zapisuje do pliku cache (`gminy_processed.geojson`) aby kolejne starty były szybkie. Ponieważ dane nie zawierają identyfikatora TERYT ani powiatu, **nazwa gminy jest jedynym kluczem** — gminy o tej samej nazwie w różnych powiatach mogą się łączyć.
 
 ## 4. Potok danych
 
