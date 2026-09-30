@@ -47,3 +47,9 @@ We use a standard Python virtual environment (`venv`) to keep project dependenci
    pip list
    ```
    You should see `duckdb`, `pandas`, `polars`, and `pyarrow` in the output list.
+
+6. **Run**
+
+   ```shell
+   streamlit run streamlit_app.py
+   ```
