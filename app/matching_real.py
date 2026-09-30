@@ -8,6 +8,10 @@ from app.categories import GROUP_ORDER
 
 _EXCLUDED = {"Handel internetowy", "Inne"}
 CATEGORIES = [g for g in GROUP_ORDER if g not in _EXCLUDED]
+
+# Kategorie wykluczone z algorytmu rankingu — ubiquitous, nie różnicują gmin
+_MATCH_EXCLUDED = _EXCLUDED | {"Żywność", "Zdrowie i apteki", "Dyskonty i domy towarowe"}
+_MATCH_CATEGORIES = [g for g in GROUP_ORDER if g not in _MATCH_EXCLUDED]
 _BY_CAT_PATH = Path("dataset/json/by_category.json")
 _DOMINANT_PATH = Path("dataset/json/t_dominant.json")
 
@@ -22,18 +26,20 @@ def _read_json(path: Path):
         return None
 
 
-def _load_raw() -> dict[str, tuple[float, ...]]:
+def _load_raw(cats: list[str] = None) -> dict[str, tuple[float, ...]]:
     """Surowe udziały kategorii per gmina."""
+    if cats is None:
+        cats = CATEGORIES
     data = _read_json(_BY_CAT_PATH)
     if isinstance(data, dict) and data:
-        return {g: tuple(shares.get(c, 0.0) for c in CATEGORIES) for g, shares in data.items()}
+        return {g: tuple(shares.get(c, 0.0) for c in cats) for g, shares in data.items()}
     raw = _read_json(_DOMINANT_PATH)
     if isinstance(raw, dict) and "data" in raw:
         out: dict[str, tuple[float, ...]] = {}
         for g, rows in raw["data"].items():
             if rows:
                 grp = rows[0][0]
-                out[g] = tuple(1.0 if c == grp else 0.0 for c in CATEGORIES)
+                out[g] = tuple(1.0 if c == grp else 0.0 for c in cats)
         return out
     return {}
 
@@ -42,20 +48,22 @@ def _normalize(raw: dict[str, tuple[float, ...]]) -> dict[str, tuple[float, ...]
     """Odejmuje per-kategorię średnią rynkową → profil odchyleń od normy."""
     if not raw:
         return raw
-    n, nc = len(raw), len(CATEGORIES)
+    n = len(raw)
+    nc = len(next(iter(raw.values())))
     means = [sum(p[i] for p in raw.values()) / n for i in range(nc)]
     return {g: tuple(p[i] - means[i] for i in range(nc)) for g, p in raw.items()}
 
 
 def _load_profiles() -> dict[str, tuple[float, ...]]:
-    """Profile znormalizowane (odchylenia od średniej) — do rankingu."""
-    return _normalize(_load_raw())
+    """Profile znormalizowane bez kategorii ubiquitous — do rankingu."""
+    return _normalize(_load_raw(cats=_MATCH_CATEGORIES))
 
 
-def load_display_profiles() -> dict[str, dict[str, float]]:
+def load_display_profiles(matching_only: bool = False) -> dict[str, dict[str, float]]:
     """Surowe udziały {gmina: {kategoria: udział}} — do wizualizacji słupków."""
-    raw = _load_raw()
-    return {g: dict(zip(CATEGORIES, p)) for g, p in raw.items()}
+    cats = _MATCH_CATEGORIES if matching_only else CATEGORIES
+    raw = _load_raw(cats=cats)
+    return {g: dict(zip(cats, p)) for g, p in raw.items()}
 
 
 def load_normalized_profiles() -> dict[str, dict[str, float]]:
@@ -85,7 +93,7 @@ def rank_matches(
         from app.matching_demo import rank_matches as demo_rank
         return demo_rank(anchor, centroids, mode, max_distance_km, limit)
 
-    results = []
+    raw: list[tuple[str, str, float, float, float]] = []
     for gmina, point in centroids.items():
         if gmina == anchor:
             continue
@@ -98,23 +106,31 @@ def rank_matches(
             continue
 
         if mode == "Wzmocnienie":
-            # Obie gminy powyżej średniej rynkowej w tej samej kategorii
             shared = [max(0.0, min(a, b)) for a, b in zip(anchor_profile, candidate)]
             profile_score = sum(shared)
             best_idx = max(range(len(shared)), key=shared.__getitem__)
-            category = CATEGORIES[best_idx]
+            category = _MATCH_CATEGORIES[best_idx]
         else:
-            # Uzupełnienie: anchor powyżej średniej tam gdzie kandydat poniżej (i odwrotnie)
             complement = [
                 max(0.0, a) * max(0.0, -b) + max(0.0, b) * max(0.0, -a)
                 for a, b in zip(anchor_profile, candidate)
             ]
             profile_score = sum(sorted(complement, reverse=True)[:3]) / 3
             best_idx = max(range(len(complement)), key=complement.__getitem__)
-            category = CATEGORIES[best_idx]
+            category = _MATCH_CATEGORIES[best_idx]
 
         proximity = 1 - distance / max_distance_km
-        score = round(100 * (0.8 * min(profile_score, 1.0) + 0.2 * proximity))
+        raw.append((gmina, category, profile_score, distance, proximity))
+
+    if not raw:
+        return []
+
+    # Normalizacja względem najlepszego kandydata — najlepszy profil = 1.0
+    max_ps = max(r[2] for r in raw) or 1e-9
+    results = []
+    for gmina, category, ps, distance, proximity in raw:
+        normalized = ps / max_ps
+        score = round(100 * (0.8 * normalized + 0.2 * proximity))
         results.append(Match(gmina, score, round(distance, 1), category))
 
     return sorted(results, key=lambda m: (-m.score, m.distance_km, m.gmina))[:limit]

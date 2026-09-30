@@ -9,7 +9,8 @@ from app.matching_map import build_matching_map
 from app.categories import GROUP_ICONS, GROUP_ORDER
 
 _REAL_DATA_PATH = Path("dataset/json/by_category.json")
-CATEGORIES = [g for g in GROUP_ORDER if g not in {"Handel internetowy", "Inne"}]
+_VIEW_EXCLUDED = {"Handel internetowy", "Inne", "Żywność", "Zdrowie i apteki", "Dyskonty i domy towarowe"}
+CATEGORIES = [g for g in GROUP_ORDER if g not in _VIEW_EXCLUDED]
 
 
 def _get_rank_fn():
@@ -23,7 +24,7 @@ def _get_rank_fn():
 @st.cache_resource(show_spinner=False)
 def _cached_profiles() -> dict[str, dict[str, float]]:
     from app.matching_real import load_display_profiles
-    return load_display_profiles()
+    return load_display_profiles(matching_only=True)
 
 
 @st.cache_resource(show_spinner=False)
@@ -225,7 +226,7 @@ def render_matching(mode: str) -> None:
         radius = st.select_slider(
             "Zasięg",
             options=[30, 50, 80, 120, 150, 200, 300],
-            value=150,
+            value=50,
             format_func=lambda x: f"{x} km",
         )
 
@@ -318,7 +319,12 @@ def render_matching(mode: str) -> None:
                                     f'margin:2px 2px 2px 0;white-space:nowrap">{icon} {cat}</span>'
                                 )
                             if chips:
-                                st.markdown("".join(chips), unsafe_allow_html=True)
+                                st.markdown(
+                                    f'<p style="margin:6px 0 2px;font-size:0.78em;color:#94a3b8;">'
+                                    f'Najbardziej dominujące w {match.gmina}:</p>'
+                                    + "".join(chips),
+                                    unsafe_allow_html=True,
+                                )
 
                         # ── wykres porównawczy — zawsze widoczny ──────────
                         if match_profile:
