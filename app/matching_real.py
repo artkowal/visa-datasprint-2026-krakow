@@ -60,10 +60,14 @@ def _load_profiles() -> dict[str, tuple[float, ...]]:
 
 
 def load_display_profiles(matching_only: bool = False) -> dict[str, dict[str, float]]:
-    """Surowe udziały {gmina: {kategoria: udział}} — do wizualizacji słupków."""
+    """Udziały {gmina: {kategoria: udział}} renormalizowane do wybranych kategorii."""
     cats = _MATCH_CATEGORIES if matching_only else CATEGORIES
     raw = _load_raw(cats=cats)
-    return {g: dict(zip(cats, p)) for g, p in raw.items()}
+    result = {}
+    for g, p in raw.items():
+        total = sum(p) or 1.0
+        result[g] = {c: v / total for c, v in zip(cats, p)}
+    return result
 
 
 def load_normalized_profiles() -> dict[str, dict[str, float]]:
