@@ -43,20 +43,14 @@ st.markdown("""
 
     /* logo Megapolis VISA: małe, przypięte do lewego dolnego rogu okna */
     .megapolis-logo {
-        position: fixed; left: 16px; bottom: 14px;
-        width: 110px; max-width: 40vw; height: auto;
+        position: fixed; left: 16px; bottom: 95%;
+        width: 10%; max-width: 40vw; height: auto;
         z-index: 999999; pointer-events: none; opacity: 0.95;
     }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown(
-    '<div style="padding:16px 20px;border-left:3px solid #f7bb42;'
-    'border-radius:8px;background:#282c44;color:#cdd6f4;line-height:1.45">'
-    'Zobacz, gdzie gminy współpracują i jakie funkcje mogą rozwijać razem.'
-    '</div>',
-    unsafe_allow_html=True,
-)
+
 
 
 @st.cache_resource(show_spinner=False)
@@ -190,6 +184,14 @@ def map_fragment():
 
 map_fragment()
 st.markdown(f'<img class="megapolis-logo" src="{_logo_data_uri()}" alt="Megapolis VISA">', unsafe_allow_html=True)
+
+st.markdown(
+    '<div style="padding:16px 20px;border-left:3px solid #f7bb42;'
+    'border-radius:8px;background:#282c44;color:#cdd6f4;line-height:1.45;margin-bottom:1%">'
+    'Zobacz, gdzie gminy współpracują i jakie funkcje mogą rozwijać razem.'
+    '</div>',
+    unsafe_allow_html=True,
+)
 
 # ── Pasek wybranych + wyczyść ─────────────────────────────────────────────────
 if selected:
