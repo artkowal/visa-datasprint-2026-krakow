@@ -26,12 +26,14 @@ st.markdown("""
         [data-testid="collapsedControl"] { display: none !important; }
     }
 
-    /* logo Megapolis VISA: małe, przypięte do lewego dolnego rogu okna */
-    .megapolis-logo {
-        position: fixed; left: 16px; bottom: 95%;
-        width: 10%; max-width: 40vw; height: auto;
-        z-index: 999999; pointer-events: none; opacity: 0.95;
-    }
+    /* ukryj wbudowany spacer/header sidebara — daje pusty odstęp nad logo */
+    section[data-testid="stSidebar"] [data-testid="stLogoSpacer"],
+    section[data-testid="stSidebar"] [data-testid="stSidebarHeader"],
+    section[data-testid="stSidebar"] .e16xr0mu4 { display: none !important; }
+
+    /* logo Megapolis VISA w sidebarze — pełna szerokość */
+    .megapolis-logo-wrap { padding-top: 30px; padding-bottom: 4px; margin-left: -0.5rem; margin-right: -0.5rem; width: calc(100% + 1rem); }
+    .megapolis-logo-wrap img { width: 100%; height: auto; display: block; }
 </style>
 """, unsafe_allow_html=True)
 
