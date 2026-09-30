@@ -12,45 +12,56 @@ _BY_CAT_PATH = Path("dataset/json/by_category.json")
 _DOMINANT_PATH = Path("dataset/json/t_dominant.json")
 
 
-def _load_profiles() -> dict[str, tuple[float, ...]]:
-    """Ładuje profile kategorii. Używa by_category.json gdy dostępny, inaczej t_dominant."""
+def _read_json(path: Path):
+    """Wczytuje JSON z pliku; zwraca None gdy plik brak, pusty lub uszkodzony."""
     import json
-    if _BY_CAT_PATH.exists():
-        data = json.loads(_BY_CAT_PATH.read_text(encoding="utf-8"))
-        return {
-            gmina: tuple(shares.get(cat, 0.0) for cat in CATEGORIES)
-            for gmina, shares in data.items()
-        }
-    if _DOMINANT_PATH.exists():
-        raw = json.loads(_DOMINANT_PATH.read_text(encoding="utf-8"))
-        profiles: dict[str, tuple[float, ...]] = {}
-        for gmina, rows in raw["data"].items():
-            if not rows:
-                continue
-            grupa = rows[0][0]  # cols: [grupa, n, pct, avg_amt]
-            profiles[gmina] = tuple(1.0 if cat == grupa else 0.0 for cat in CATEGORIES)
-        return profiles
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+        return json.loads(text) if text else None
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _load_raw() -> dict[str, tuple[float, ...]]:
+    """Surowe udziały kategorii per gmina."""
+    data = _read_json(_BY_CAT_PATH)
+    if isinstance(data, dict) and data:
+        return {g: tuple(shares.get(c, 0.0) for c in CATEGORIES) for g, shares in data.items()}
+    raw = _read_json(_DOMINANT_PATH)
+    if isinstance(raw, dict) and "data" in raw:
+        out: dict[str, tuple[float, ...]] = {}
+        for g, rows in raw["data"].items():
+            if rows:
+                grp = rows[0][0]
+                out[g] = tuple(1.0 if c == grp else 0.0 for c in CATEGORIES)
+        return out
     return {}
+
+
+def _normalize(raw: dict[str, tuple[float, ...]]) -> dict[str, tuple[float, ...]]:
+    """Odejmuje per-kategorię średnią rynkową → profil odchyleń od normy."""
+    if not raw:
+        return raw
+    n, nc = len(raw), len(CATEGORIES)
+    means = [sum(p[i] for p in raw.values()) / n for i in range(nc)]
+    return {g: tuple(p[i] - means[i] for i in range(nc)) for g, p in raw.items()}
+
+
+def _load_profiles() -> dict[str, tuple[float, ...]]:
+    """Profile znormalizowane (odchylenia od średniej) — do rankingu."""
+    return _normalize(_load_raw())
 
 
 def load_display_profiles() -> dict[str, dict[str, float]]:
-    """Returns {gmina: {category: share}} for visualization."""
-    import json
-    if _BY_CAT_PATH.exists():
-        data = json.loads(_BY_CAT_PATH.read_text(encoding="utf-8"))
-        return {
-            gmina: {cat: float(shares.get(cat, 0.0)) for cat in CATEGORIES}
-            for gmina, shares in data.items()
-        }
-    if _DOMINANT_PATH.exists():
-        raw = json.loads(_DOMINANT_PATH.read_text(encoding="utf-8"))
-        profiles: dict[str, dict[str, float]] = {}
-        for gmina, rows in raw["data"].items():
-            if rows:
-                grupa = rows[0][0]
-                profiles[gmina] = {cat: (1.0 if cat == grupa else 0.0) for cat in CATEGORIES}
-        return profiles
-    return {}
+    """Surowe udziały {gmina: {kategoria: udział}} — do wizualizacji słupków."""
+    raw = _load_raw()
+    return {g: dict(zip(CATEGORIES, p)) for g, p in raw.items()}
+
+
+def load_normalized_profiles() -> dict[str, dict[str, float]]:
+    """Odchylenia od średniej rynkowej — do logiki dopasowań i _key_pairs."""
+    norm = _normalize(_load_raw())
+    return {g: dict(zip(CATEGORIES, p)) for g, p in norm.items()}
 
 
 def _distance_km(a: tuple[float, float], b: tuple[float, float]) -> float:
@@ -87,16 +98,15 @@ def rank_matches(
             continue
 
         if mode == "Wzmocnienie":
-            # Wysoki wynik gdy obie gminy mają silne te same kategorie
-            shared = [min(a, b) for a, b in zip(anchor_profile, candidate)]
+            # Obie gminy powyżej średniej rynkowej w tej samej kategorii
+            shared = [max(0.0, min(a, b)) for a, b in zip(anchor_profile, candidate)]
             profile_score = sum(shared)
             best_idx = max(range(len(shared)), key=shared.__getitem__)
             category = CATEGORIES[best_idx]
         else:
-            # Uzupełnienie: anchor słaby w X, kandydat silny w X (i odwrotnie)
-            # anchor_weak * candidate_strong + candidate_weak * anchor_strong
+            # Uzupełnienie: anchor powyżej średniej tam gdzie kandydat poniżej (i odwrotnie)
             complement = [
-                (1 - a) * b + (1 - b) * a
+                max(0.0, a) * max(0.0, -b) + max(0.0, b) * max(0.0, -a)
                 for a, b in zip(anchor_profile, candidate)
             ]
             profile_score = sum(sorted(complement, reverse=True)[:3]) / 3

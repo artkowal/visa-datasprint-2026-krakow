@@ -26,6 +26,12 @@ def _cached_profiles() -> dict[str, dict[str, float]]:
     return load_display_profiles()
 
 
+@st.cache_resource(show_spinner=False)
+def _cached_norm_profiles() -> dict[str, dict[str, float]]:
+    from app.matching_real import load_normalized_profiles
+    return load_normalized_profiles()
+
+
 @st.cache_resource(show_spinner="Przygotowuję mapę gmin…")
 def load_matching_map():
     geojson, _, centroids = load_gminy_data("geojson/postcodes_poland.geojson")
@@ -110,27 +116,40 @@ def _profile_fig(
     return fig
 
 
-def _key_pairs(anchor: dict[str, float], match: dict[str, float], mode: str) -> list[tuple[str, str]]:
-    """Returns list of (category, description) pairs to highlight in match card."""
-    pairs = []
+def _key_pairs(
+    anchor_name: str,
+    match_name: str,
+    norm_profiles: dict[str, dict[str, float]],
+    mode: str,
+) -> list[tuple]:
+    """
+    Wzmocnienie → list of (cat, None, desc)
+    Uzupełnienie → list of (anchor_cat_or_None, match_cat_or_None, score)
+    """
+    an = norm_profiles.get(anchor_name, {})
+    mn = norm_profiles.get(match_name, {})
+
     if mode == "Wzmocnienie":
-        shared = [(cat, min(anchor.get(cat, 0), match.get(cat, 0))) for cat in CATEGORIES]
+        shared = [(c, min(an.get(c, 0), mn.get(c, 0))) for c in CATEGORIES]
+        shared = [(c, v) for c, v in shared if v > 0.005]
         shared.sort(key=lambda x: -x[1])
-        for cat, strength in shared[:3]:
-            if strength >= 0.06:
-                pct = round(strength * 100)
-                pairs.append((cat, f"obie ~{pct}%"))
+        return [(c, None, f"obie +{v*100:.0f}pp ponad śred.") for c, v in shared[:3]]
     else:
-        for cat in CATEGORIES:
-            a = anchor.get(cat, 0)
-            m = match.get(cat, 0)
-            if m >= 0.08 and a < 0.04:
-                pairs.append((cat, f"uzupełnia Cię ({round(m*100)}%)", m))
-            elif a >= 0.08 and m < 0.04:
-                pairs.append((cat, f"Ty uzupełniasz ({round(a*100)}%)", a))
-        pairs.sort(key=lambda x: -x[2])
-        pairs = [(cat, desc) for cat, desc, _ in pairs[:3]]
-    return pairs
+        # pary wymiany: anchor silny tam gdzie match słaby i vice versa
+        a_gives = sorted(
+            [(c, an.get(c, 0)) for c in CATEGORIES if an.get(c, 0) > 0.005 and mn.get(c, 0) < 0],
+            key=lambda x: -x[1],
+        )
+        m_gives = sorted(
+            [(c, mn.get(c, 0)) for c in CATEGORIES if mn.get(c, 0) > 0.005 and an.get(c, 0) < 0],
+            key=lambda x: -x[1],
+        )
+        n = min(3, max(len(a_gives), len(m_gives)))
+        return [
+            (a_gives[i] if i < len(a_gives) else None,
+             m_gives[i] if i < len(m_gives) else None)
+            for i in range(n)
+        ]
 
 
 def render_matching(mode: str) -> None:
@@ -160,6 +179,7 @@ def render_matching(mode: str) -> None:
     rank_fn, is_real = _get_rank_fn()
     matches = rank_fn(anchor, centroids, mode, max_distance_km=radius)
     all_profiles = _cached_profiles()
+    norm_profiles = _cached_norm_profiles()
     anchor_profile = all_profiles.get(anchor, {})
 
     # ── Mapa (lewa) + Profil kotwy (prawa) ───────────────────────────────────
@@ -208,11 +228,20 @@ def render_matching(mode: str) -> None:
                     st.markdown(f"**{match.gmina}**")
                     st.metric("Wynik", f"{match.score}/100", delta=f"{match.distance_km:g} km", delta_color="off")
 
-                    if match_profile and anchor_profile:
-                        pairs = _key_pairs(anchor_profile, match_profile, mode)
-                        for cat, desc in pairs:
-                            icon = GROUP_ICONS.get(cat, "")
-                            st.caption(f"{icon} **{cat}** — {desc}")
+                    pairs = _key_pairs(anchor, match.gmina, norm_profiles, mode)
+                    if pairs:
+                        if mode == "Wzmocnienie":
+                            for cat, _, desc in pairs:
+                                icon = GROUP_ICONS.get(cat, "")
+                                st.caption(f"{icon} **{cat}** — {desc}")
+                        else:
+                            for row in pairs:
+                                ag, mg = row
+                                a_str = (f"{GROUP_ICONS.get(ag[0],'')} **{ag[0]}** +{ag[1]*100:.0f}pp"
+                                         if ag else "—")
+                                m_str = (f"{GROUP_ICONS.get(mg[0],'')} **{mg[0]}** +{mg[1]*100:.0f}pp"
+                                         if mg else "—")
+                                st.caption(f"{a_str} ↔ {m_str}")
 
                     with st.expander("Pełny profil kategorii"):
                         if match_profile:

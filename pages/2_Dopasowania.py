@@ -10,6 +10,7 @@ st.markdown("""
 <style>
     .stApp { background: #1e1e2e; color: #cdd6f4; }
     h1, h2, h3 { color: #a78bfa !important; }
+    .block-container { padding-left: 1.5rem !important; padding-right: 1.5rem !important; max-width: 100% !important; }
 </style>
 """, unsafe_allow_html=True)
 st.title("🧩 Dopasowania gmin")
