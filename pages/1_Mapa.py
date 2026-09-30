@@ -314,6 +314,10 @@ st.markdown("---")
 import pandas as pd
 
 
+def _fmt_month(m) -> str:
+    s = str(int(m))
+    return f"{s[:4]}-{s[4:]}"
+
 def _delta(current, ref, key, pct=False, inverse=False):
     if not ref or current is ref_summary:
         return "—", "off"
@@ -366,6 +370,7 @@ for col, gmina in zip(st.columns(len(gminy_list)), gminy_list):
         if _city[gmina]["months"]:
             st.markdown("**Goście per miesiąc:**")
             df = pd.DataFrame(_city[gmina]["months"]).set_index("month")[["n_foreign"]]
+            df.index = df.index.map(_fmt_month)
             df.columns = ["Turyści"]
             st.bar_chart(df, width='stretch')
 
@@ -383,6 +388,7 @@ for col, gmina in zip(st.columns(len(gminy_list)), gminy_list):
         if _city[gmina]["months"]:
             st.markdown("**Trend miesięczny:**")
             df = pd.DataFrame(_city[gmina]["months"]).set_index("month")[["n", "pct_foreign"]]
+            df.index = df.index.map(_fmt_month)
             df.columns = ["Transakcje", "% zagranicznych"]
             st.line_chart(df, width='stretch')
 
