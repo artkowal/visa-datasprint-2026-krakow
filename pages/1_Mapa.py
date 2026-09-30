@@ -435,7 +435,7 @@ for col, gmina in zip(st.columns(len(gminy_list)), gminy_list):
         e1, e2, e3 = st.columns(3)
         e1.metric("Samowystarczalność", f"{r.get('E1_self_sufficiency', 0):.1f}%",
                   help="% zakupów codziennych robionych lokalnie przez mieszkańców gminy")
-        e2.metric("Atrakcyjność", f"{r.get('E2_attractiveness', 0):.1f}%",
+        e2.metric("Atrakcyjność", f"{r.get('E2_attractiveness', 0):.1f}",
                   help="stosunek napływ / odpływ)")
         e3.metric("Zależność od gości", f"{r.get('E3_tourism_dependency', 0):.1f}%",
                   help="% transakcji w obszarze od osób spoza gminy")
