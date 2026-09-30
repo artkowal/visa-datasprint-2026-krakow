@@ -1,6 +1,8 @@
 # Visa DATASPRINT 2026 - Krakow
 https://visadatasprint.com/#home
 
+> Megapolis VISA to zaawansowana analitycznie platforma cyfrowa stworzona w celu wspierania procesów strategicznych, planistycznych i inwestycyjnych w jednostkach samorządu terytorialnego, która – wykorzystując realne, anonimizowane dane transakcyjne systemu Visa oraz szczegółową geometrię kodów pocztowych – redefiniuje podejście do tworzenia polityk rozwoju miast, gmin, powiatów i województw
+
 ## Dopasowania gmin (demo)
 
 Uruchom `streamlit run streamlit_app.py`. Domyślnie otwiera się widok
