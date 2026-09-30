@@ -261,7 +261,7 @@ def build_map(
         map_zoom=plotly_zoom,
         map_center={"lat": center[0], "lon": center[1]},
         margin={"r": 0, "t": 0, "l": 0, "b": 0},
-        height=520,
+        height=600,
         paper_bgcolor="#1e1e2e",
         plot_bgcolor="#1e1e2e",
         hoverlabel=dict(bgcolor="#2a2a3e", font_color="#cdd6f4", font_size=13),
