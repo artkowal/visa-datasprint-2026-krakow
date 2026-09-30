@@ -466,7 +466,7 @@ def _build_residents(gmina_to_codes: dict) -> dict:
             "B3_inflow":             inflow_d.get(gmina, []),
             "B4_outflow_cat":        b4_d.get(gmina, []),
             "E1_self_sufficiency":   b1,
-            "E2_attractiveness":     round(n_in / (n_in + n_out) * 100, 1) if (n_in + n_out) else 0,
+            "E2_attractiveness":     round(n_in / n_out) if (n_in + n_out) else 0,
             "E3_tourism_dependency": float(e3_d.get(gmina, 0.0)),
             "E5_connections":        e5,
         }
