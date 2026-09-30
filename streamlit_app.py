@@ -1,3 +1,4 @@
+import base64
 from pathlib import Path
 
 import plotly.io as pio
@@ -19,7 +20,7 @@ st.set_page_config(
     page_title="Megapolis VISA",
     page_icon="🗺️",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 st.markdown("""
@@ -31,20 +32,39 @@ st.markdown("""
     [data-stale="true"] { opacity: 0.75 !important; transition: opacity 0.15s; }
     /* zmniejszone paddingi boczne */
     .block-container { padding-left: 1.5rem !important; padding-right: 1.5rem !important; max-width: 100% !important; }
+
+    /* sidebar zawsze widoczny na desktopie: ukryj przyciski zwijania i rozwijania.
+       Na wąskich ekranach (< 768 px) sidebar jest nakładką, więc tam przyciski zostają. */
+    @media (min-width: 768px) {
+        [data-testid="stSidebarCollapseButton"],
+        [data-testid="stSidebarCollapsedControl"],
+        [data-testid="collapsedControl"] { display: none !important; }
+    }
+
+    /* logo Megapolis VISA: małe, przypięte do lewego dolnego rogu okna */
+    .megapolis-logo {
+        position: fixed; left: 16px; bottom: 14px;
+        width: 110px; max-width: 40vw; height: auto;
+        z-index: 999999; pointer-events: none; opacity: 0.95;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-logo_col, note_col = st.columns([3, 2], gap="large", vertical_alignment="center")
-with logo_col:
-    st.image(str(Path(__file__).resolve().parent / "assets" / "megapolis-visa.svg"), width="stretch")
-with note_col:
-    st.markdown(
-        '<div style="padding:16px 20px;border-left:3px solid #f7bb42;'
-        'border-radius:8px;background:#282c44;color:#cdd6f4;line-height:1.45">'
-        'Zobacz, gdzie gminy współpracują i jakie funkcje mogą rozwijać razem.'
-        '</div>',
-        unsafe_allow_html=True,
-    )
+st.markdown(
+    '<div style="padding:16px 20px;border-left:3px solid #f7bb42;'
+    'border-radius:8px;background:#282c44;color:#cdd6f4;line-height:1.45">'
+    'Zobacz, gdzie gminy współpracują i jakie funkcje mogą rozwijać razem.'
+    '</div>',
+    unsafe_allow_html=True,
+)
+
+
+@st.cache_resource(show_spinner=False)
+def _logo_data_uri() -> str:
+    """Logo jako data URI (SVG wstawiany w HTML, bo st.image nie pozwala przypiąć obrazu do rogu okna)."""
+    svg = (Path(__file__).resolve().parent / "assets" / "megapolis-visa.svg").read_bytes()
+    return "data:image/svg+xml;base64," + base64.b64encode(svg).decode()
+
 
 # ── Dane gmin ─────────────────────────────────────────────────────────────────
 @st.cache_resource(show_spinner="Scalanie kodów pocztowych w gminy…")
@@ -169,6 +189,7 @@ def map_fragment():
             st.rerun(scope="app")
 
 map_fragment()
+st.markdown(f'<img class="megapolis-logo" src="{_logo_data_uri()}" alt="Megapolis VISA">', unsafe_allow_html=True)
 
 # ── Pasek wybranych + wyczyść ─────────────────────────────────────────────────
 if selected:
