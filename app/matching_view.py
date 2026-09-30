@@ -43,6 +43,8 @@ def _profile_fig(
     mode: str,
     anchor: dict[str, float] | None = None,
     height_per_row: int = 26,
+    anchor_name: str = "Kotwica",
+    match_name: str = "Dopasowanie",
 ) -> go.Figure:
     """Horizontal bar chart of category shares.
 
@@ -89,67 +91,85 @@ def _profile_fig(
 
     text = [f"{v:.1f}%" if v >= 1.0 else "" for v in vals]
 
-    fig = go.Figure(go.Bar(
-        x=vals,
-        y=labels,
-        orientation="h",
-        marker_color=colors,
-        marker_line=dict(
-            color=["#2dd4bf" if c == "#2dd4bf" else "rgba(0,0,0,0)" for c in colors],
-            width=2,
-        ),
-        text=text,
+    # tryb bez kotwicy — samodzielny profil
+    if anchor is None:
+        fig = go.Figure(go.Bar(
+            x=vals, y=labels, orientation="h",
+            marker_color=colors,
+            text=text, textposition="outside", cliponaxis=False,
+            hovertemplate="%{y}: %{x:.1f}%<extra></extra>",
+        ))
+        max_val = max(vals) if vals else 1
+        fig.update_layout(
+            height=max(180, len(names) * height_per_row),
+            margin={"l": 0, "r": 50, "t": 4, "b": 4},
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            font={"color": "#cdd6f4", "size": 11},
+            xaxis=dict(showgrid=False, zeroline=False, visible=False, range=[0, max_val * 1.35]),
+            yaxis=dict(showgrid=False, zeroline=False, tickfont={"size": 11}, autorange="reversed"),
+            showlegend=False,
+        )
+        return fig
+
+    # tryb porównania — dwa słupki obok siebie
+    anchor_vals = [anchor.get(c, 0) * 100 for c, _ in sorted_cats]
+
+    def _bar_color_pair(cat, match_val, anchor_val, mode):
+        m, a = match_val / 100, anchor_val / 100
+        if mode == "Wzmocnienie":
+            if a >= 0.08 and m >= 0.08:
+                return "#2dd4bf", "#2dd4bf"   # obie mocne — teal
+            return "#475569", "#374151"
+        else:
+            if m >= 0.08 and a < 0.04:
+                return "#fbbf24", "#374151"    # match uzupełnia
+            if a >= 0.08 and m < 0.04:
+                return "#374151", "#a78bfa"    # anchor uzupełnia
+            return "#475569", "#374151"
+
+    match_colors, anchor_colors = zip(*[_bar_color_pair(c, v, anchor.get(c, 0) * 100, mode)
+                                        for c, v in sorted_cats])
+
+    anchor_text = [f"{v:.1f}%" if v >= 1.0 else "" for v in anchor_vals]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        name=anchor_name,
+        x=anchor_vals, y=labels, orientation="h",
+        marker_color=list(anchor_colors),
+        opacity=0.70,
+        text=anchor_text,
         textposition="outside",
+        textfont=dict(size=13, color="#94a3b8"),
         cliponaxis=False,
-        hovertemplate="%{y}: %{x:.1f}%<extra></extra>",
-        name="Dopasowanie",
+        hovertemplate=f"<b>%{{y}}</b><br>{anchor_name}: %{{x:.1f}}%<extra></extra>",
+    ))
+    fig.add_trace(go.Bar(
+        name=match_name,
+        x=vals, y=labels, orientation="h",
+        marker_color=list(match_colors),
+        text=[f"{v:.1f}%" if v >= 1.0 else "" for v in vals],
+        textposition="outside",
+        textfont=dict(size=13, color="#cdd6f4"),
+        cliponaxis=False,
+        hovertemplate=f"<b>%{{y}}</b><br>{match_name}: %{{x:.1f}}%<extra></extra>",
     ))
 
-    # warstwa referencyjna — wartości kotwicy jako złote markery
-    if anchor is not None:
-        anchor_vals = [anchor.get(c, 0) * 100 for c, _ in sorted_cats]
-        shared_cats = {c for c, v in sorted_cats if anchor.get(c, 0) >= 0.08 and v >= 0.08} if mode == "Wzmocnienie" else set()
-        fig.add_trace(go.Scatter(
-            x=anchor_vals,
-            y=labels,
-            mode="markers",
-            marker=dict(
-                symbol="line-ns-open",
-                size=14,
-                color="#f7bb42",
-                line=dict(width=2.5, color="#f7bb42"),
-            ),
-            name="Kotwica",
-            hovertemplate="%{y} (kotwica): %{x:.1f}%<extra></extra>",
-        ))
-
-    max_val = max(vals) if vals else 1
-    if anchor is not None:
-        anchor_max = max((anchor.get(c, 0) * 100 for c, _ in sorted_cats), default=0)
-        max_val = max(max_val, anchor_max)
-
-    # tytuł z wspólnymi mocnymi kategoriami (tylko Wzmocnienie)
-    shared_label = ""
-    if anchor is not None and mode == "Wzmocnienie":
-        shared = [f"{GROUP_ICONS.get(c,'')} {c}" for c, v in sorted_cats if anchor.get(c, 0) >= 0.08 and v >= 0.08]
-        if shared:
-            shared_label = "🤝 " + " · ".join(shared)
+    max_val = max(max(vals), max(anchor_vals)) if vals else 1
 
     fig.update_layout(
-        height=max(180, len(names) * height_per_row),
-        margin={"l": 0, "r": 50, "t": 28 if shared_label else 4, "b": 4},
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font={"color": "#cdd6f4", "size": 11},
-        title=dict(text=shared_label, font=dict(size=11, color="#2dd4bf"), x=0, xanchor="left") if shared_label else {},
-        xaxis=dict(
-            showgrid=False, zeroline=False, visible=False,
-            range=[0, max_val * 1.35],
-        ),
-        yaxis=dict(showgrid=False, zeroline=False, tickfont={"size": 11}),
+        barmode="group",
+        bargap=0.25,
+        bargroupgap=0.08,
+        height=max(220, len(names) * height_per_row),
+        margin={"l": 0, "r": 65, "t": 4, "b": 4},
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font={"color": "#cdd6f4", "size": 13},
+        xaxis=dict(showgrid=False, zeroline=False, visible=False, range=[0, max_val * 1.4]),
+        yaxis=dict(showgrid=False, zeroline=False, tickfont={"size": 13}, autorange="reversed"),
         legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1,
-                    font=dict(size=10)) if anchor is not None else {},
-        showlegend=anchor is not None,
+                    font=dict(size=11), bgcolor="rgba(0,0,0,0)"),
+        showlegend=True,
     )
     return fig
 
@@ -259,33 +279,52 @@ def render_matching(mode: str) -> None:
     if not matches:
         st.warning("W tym zasięgu nie znaleziono innych gmin. Zwiększ zasięg.")
     else:
-        match_cols = st.columns(len(matches), gap="small")
-        for col, match in zip(match_cols, matches):
-            match_profile = all_profiles.get(match.gmina, {})
-            with col:
-                with st.container(border=True):
-                    st.markdown(f"**{match.gmina}**")
-                    st.metric("Wynik", f"{match.score}/100", delta=f"{match.distance_km:g} km", delta_color="off")
+        for row_start in range(0, len(matches), 2):
+            row_matches = matches[row_start:row_start + 2]
+            cols = st.columns(2, gap="large")
+            for col, match in zip(cols, row_matches):
+                match_profile = all_profiles.get(match.gmina, {})
+                with col:
+                    with st.container(border=True):
+                        st.markdown(f"**{match.gmina}**")
+                        st.metric("Wynik", f"{match.score}/100", delta=f"{match.distance_km:g} km", delta_color="off")
 
-                    pairs = _key_pairs(anchor, match.gmina, norm_profiles, mode)
-                    if pairs:
-                        if mode == "Wzmocnienie":
-                            for cat, _, desc in pairs:
+                        # ── kolorowe chipy kategorii ──────────────────────
+                        if match_profile and anchor_profile:
+                            chips = []
+                            for cat in CATEGORIES:
+                                m_val = match_profile.get(cat, 0)
+                                a_val = anchor_profile.get(cat, 0)
+                                if mode == "Wzmocnienie":
+                                    if a_val >= 0.08 and m_val >= 0.08:
+                                        bg, fg = "#2dd4bf", "#0f172a"
+                                    elif m_val >= 0.05:
+                                        bg, fg = "#334155", "#cdd6f4"
+                                    else:
+                                        continue
+                                else:
+                                    if m_val >= 0.08 and a_val < 0.04:
+                                        bg, fg = "#f7bb42", "#0f172a"
+                                    elif a_val >= 0.08 and m_val < 0.04:
+                                        bg, fg = "#a78bfa", "#0f172a"
+                                    elif m_val >= 0.05:
+                                        bg, fg = "#334155", "#cdd6f4"
+                                    else:
+                                        continue
                                 icon = GROUP_ICONS.get(cat, "")
-                                st.caption(f"{icon} **{cat}** — {desc}")
-                        else:
-                            for row in pairs:
-                                ag, mg = row
-                                a_str = (f"{GROUP_ICONS.get(ag[0],'')} **{ag[0]}** +{ag[1]*100:.0f}pp"
-                                         if ag else "—")
-                                m_str = (f"{GROUP_ICONS.get(mg[0],'')} **{mg[0]}** +{mg[1]*100:.0f}pp"
-                                         if mg else "—")
-                                st.caption(f"{a_str} ↔ {m_str}")
+                                chips.append(
+                                    f'<span style="display:inline-block;background:{bg};color:{fg};'
+                                    f'padding:3px 8px;border-radius:999px;font-size:0.75em;'
+                                    f'margin:2px 2px 2px 0;white-space:nowrap">{icon} {cat}</span>'
+                                )
+                            if chips:
+                                st.markdown("".join(chips), unsafe_allow_html=True)
 
-                    with st.expander("Pełny profil kategorii"):
+                        # ── wykres porównawczy — zawsze widoczny ──────────
                         if match_profile:
                             st.plotly_chart(
-                                _profile_fig(match_profile, mode, anchor=anchor_profile, height_per_row=22),
+                                _profile_fig(match_profile, mode, anchor=anchor_profile,
+                                             height_per_row=44, anchor_name=anchor, match_name=match.gmina),
                                 key=f"match_chart_{match.gmina}",
                                 width="stretch",
                             )
