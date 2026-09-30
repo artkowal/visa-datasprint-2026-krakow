@@ -380,20 +380,20 @@ for col, gmina in zip(st.columns(len(gminy_list)), gminy_list):
             df.columns = ["Karta", "Transakcje", "%"]
             st.dataframe(df, hide_index=True, width='stretch')
 
-# ── Sekcja B: Rytm dnia ───────────────────────────────────────────────────────
+# ── Sekcja B: Sezonowość i rytm dnia ─────────────────────────────────────────
 st.markdown("---")
-st.markdown("### 🕐 Rytm dnia")
+st.markdown("### 📅 Sezonowość i rytm dnia")
 for col, gmina in zip(st.columns(len(gminy_list)), gminy_list):
     with col:
         if _city[gmina]["months"]:
-            st.markdown("**Trend miesięczny:**")
+            st.markdown("**Aktywność per miesiąc:**")
             df = pd.DataFrame(_city[gmina]["months"]).set_index("month")[["n", "pct_foreign"]]
             df.index = df.index.map(_fmt_month)
             df.columns = ["Transakcje", "% zagranicznych"]
             st.line_chart(df, width='stretch')
 
         if _city[gmina]["hours"]:
-            st.markdown("**% turystów per godzina:**")
+            st.markdown("**Rytm dnia — % turystów per godzina:**")
             df = pd.DataFrame(_city[gmina]["hours"]).set_index("hour")[["pct_foreign"]]
             df.columns = ["% zagranicznych"]
             st.area_chart(df, width='stretch')
