@@ -1,3 +1,4 @@
+import plotly.graph_objects as go
 import plotly.io as pio
 import streamlit as st
 from app.map_builder import build_map, load_gminy_data
@@ -133,6 +134,9 @@ def map_fragment():
                 sel.add(gmina)
                 st.toast(f"Zaznaczono: {gmina}", icon="📍")
             st.session_state["selected"] = sel
+            # zsynchronizuj gminę bazową na zakładce "Dopasowania Gmin"
+            if st.session_state["_ref_gmina"]:
+                st.session_state["_pending_anchor"] = st.session_state["_ref_gmina"]
             st.rerun(scope="app")
 
 map_fragment()
